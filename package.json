@@ -1,0 +1,41 @@
+{
+  "name": "nefol-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nefol monorepo: user-panel, admin-panel, backend, common",
+  "workspaces": [
+    "admin-panel",
+    "backend",
+    "common",
+    "user-panel"
+  ],
+  "scripts": {
+    "start:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-all.ps1",
+    "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-all.ps1",
+    "dev": "concurrently -n user,admin,api -c blue,magenta,green \"pnpm --filter user-panel dev\" \"pnpm --filter admin-panel dev\" \"pnpm --filter backend dev\"",
+    "dev:user": "pnpm --filter user-panel dev",
+    "dev:admin": "pnpm --filter admin-panel dev",
+    "dev:api": "pnpm --filter backend dev",
+    "build:all": "pnpm --filter user-panel build && pnpm --filter admin-panel build && pnpm --filter backend build",
+    "build:user": "pnpm --filter user-panel build",
+    "build:admin": "pnpm --filter admin-panel build",
+    "build:backend": "pnpm --filter backend build",
+    "install:all": "pnpm install",
+    "clean": "pnpm --filter user-panel clean && pnpm --filter admin-panel clean && pnpm --filter backend clean",
+    "lint": "pnpm --filter user-panel lint && pnpm --filter admin-panel lint && pnpm --filter backend lint",
+    "format": "echo 'add formatter later'",
+    "test": "pnpm --filter user-panel test && pnpm --filter admin-panel test && pnpm --filter backend test",
+    "share": ".\\scripts\\share-app-simple.bat",
+    "share:user": ".\\scripts\\share-app-simple.bat",
+    "share:admin": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel admin",
+    "share:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel all",
+    "share:prod": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel user -Production"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "puppeteer": "^24.25.0"
+  },
+  "dependencies": {
+    "axios": "^1.12.2"
+  }
+}

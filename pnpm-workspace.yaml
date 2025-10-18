@@ -1,0 +1,7 @@
+packages:
+  - 'admin-panel'
+  - 'backend'
+  - 'common'
+  - 'user-panel'
+
+

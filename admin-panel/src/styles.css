@@ -1,0 +1,359 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Constantia:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Nefol Brand Colors */
+    --space-cadet: #102E4A;
+    --black: #000000;
+    --silver-lake-blue: #5B88B2;
+    --old-lace: #FBF9E4;
+    --cultured: #F5F5F5;
+  }
+
+  body {
+    font-family: 'Montserrat', sans-serif;
+    background-color: var(--cultured);
+    color: var(--space-cadet);
+    margin: 0;
+    padding: 0;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Constantia', serif;
+    font-weight: 700;
+    color: var(--space-cadet);
+  }
+
+  .brand-primary {
+    color: var(--space-cadet);
+  }
+
+  .brand-secondary {
+    color: var(--silver-lake-blue);
+  }
+
+  .brand-accent {
+    color: var(--old-lace);
+  }
+
+  .bg-brand-primary {
+    background-color: var(--space-cadet);
+  }
+
+  .bg-brand-secondary {
+    background-color: var(--silver-lake-blue);
+  }
+
+  .bg-brand-accent {
+    background-color: var(--old-lace);
+  }
+
+  .bg-brand-light {
+    background-color: var(--cultured);
+  }
+
+  .border-brand-primary {
+    border-color: var(--space-cadet);
+  }
+
+  .border-brand-secondary {
+    border-color: var(--silver-lake-blue);
+  }
+}
+
+@layer components {
+  .sidebar {
+    background-color: var(--space-cadet);
+    color: var(--old-lace);
+    height: 100vh;
+    width: 288px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    overflow-y: auto;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .main-content {
+    margin-left: 288px;
+    min-height: 100vh;
+    background-color: var(--cultured);
+  }
+
+  .page-container {
+    padding: 24px;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .metric-card {
+    background-color: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+  }
+
+  .nav-item {
+    padding: 12px 16px;
+    color: var(--old-lace);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    margin: 2px 8px;
+  }
+
+  .nav-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .nav-item.active {
+    background-color: var(--silver-lake-blue);
+    color: white;
+  }
+
+  .nav-item svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .badge {
+    background-color: var(--silver-lake-blue);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .btn-primary {
+    background-color: var(--space-cadet);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: none;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--silver-lake-blue);
+  }
+
+  .btn-secondary {
+    background-color: white;
+    color: var(--space-cadet);
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: 1px solid var(--space-cadet);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--cultured);
+  }
+}
+
+:root {
+  --space-cadet: #102E4A;
+  --black: #000000;
+  --silver-lake-blue: #5B88B2;
+  --old-lace: #FBF9E4;
+  --cultured: #F5F5F5;
+}
+
+body {
+    font-family: 'Montserrat', sans-serif;
+    background-color: var(--cultured);
+    color: var(--space-cadet);
+    margin: 0;
+    padding: 0;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Constantia', serif;
+    font-weight: 700;
+    color: var(--space-cadet);
+  }
+
+  .brand-primary {
+    color: var(--space-cadet);
+  }
+
+  .brand-secondary {
+    color: var(--silver-lake-blue);
+  }
+
+  .brand-accent {
+    color: var(--old-lace);
+  }
+
+  .bg-brand-primary {
+    background-color: var(--space-cadet);
+  }
+
+  .bg-brand-secondary {
+    background-color: var(--silver-lake-blue);
+  }
+
+  .bg-brand-accent {
+    background-color: var(--old-lace);
+  }
+
+  .bg-brand-light {
+    background-color: var(--cultured);
+  }
+
+  .border-brand-primary {
+    border-color: var(--space-cadet);
+  }
+
+  .border-brand-secondary {
+    border-color: var(--silver-lake-blue);
+  }
+
+@layer components {
+  .sidebar {
+    background-color: var(--space-cadet);
+    color: var(--old-lace);
+    height: 100vh;
+    width: 288px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    overflow-y: auto;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .main-content {
+    margin-left: 288px;
+    min-height: 100vh;
+    background-color: var(--cultured);
+  }
+
+  .page-container {
+    padding: 24px;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .metric-card {
+    background-color: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+  }
+
+  .nav-item {
+    padding: 12px 16px;
+    color: var(--old-lace);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    margin: 2px 8px;
+  }
+
+  .nav-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .nav-item.active {
+    background-color: var(--silver-lake-blue);
+    color: white;
+  }
+
+  .nav-item svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .badge {
+    background-color: var(--silver-lake-blue);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .btn-primary {
+    background-color: var(--space-cadet);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: none;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--silver-lake-blue);
+  }
+
+  .btn-secondary {
+    background-color: white;
+    color: var(--space-cadet);
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: 1px solid var(--space-cadet);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--cultured);
+  }
+}
