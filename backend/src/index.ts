@@ -13,7 +13,8 @@ import { authenticateToken, sendError, sendSuccess } from './utils/apiHelpers'
 import * as productRoutes from './routes/products'
 import * as cartRoutes from './routes/cart'
 import createCMSRouter from './routes/cms'
-import blogRouter from './routes/blog'
+import blogRouter, { initBlogRouter } from './routes/blog'
+import * as affiliateRoutes from './routes/affiliate'
 import { seedCMSContent } from './utils/seedCMS'
 import { updateAllProductsWithPricing, addSampleProducts } from './utils/updateAllProducts'
 
@@ -247,7 +248,26 @@ io.on('connection', (socket) => {
 app.use('/api/cms', createCMSRouter(pool, io))
 
 // ==================== BLOG API ====================
+// Initialize blog router with database pool
+initBlogRouter(pool)
 app.use('/api/blog', blogRouter)
+
+// ==================== AFFILIATE PROGRAM API ====================
+// Affiliate application submission
+app.post('/api/admin/affiliate-applications', affiliateRoutes.submitAffiliateApplication.bind(null, pool))
+
+// Admin affiliate management
+app.get('/api/admin/affiliate-applications', affiliateRoutes.getAffiliateApplications.bind(null, pool))
+app.get('/api/admin/affiliate-applications/:id', affiliateRoutes.getAffiliateApplication.bind(null, pool))
+app.put('/api/admin/affiliate-applications/:id/approve', affiliateRoutes.approveAffiliateApplication.bind(null, pool))
+app.put('/api/admin/affiliate-applications/:id/reject', affiliateRoutes.rejectAffiliateApplication.bind(null, pool))
+
+// Affiliate partner management
+app.get('/api/affiliate/application-status', authenticateToken, affiliateRoutes.getAffiliateApplicationStatus.bind(null, pool))
+app.post('/api/affiliate/verify', authenticateToken, affiliateRoutes.verifyAffiliateCode.bind(null, pool))
+app.get('/api/affiliate/dashboard', authenticateToken, affiliateRoutes.getAffiliateDashboard.bind(null, pool))
+app.get('/api/affiliate/referrals', authenticateToken, affiliateRoutes.getAffiliateReferrals.bind(null, pool))
+app.post('/api/admin/affiliate-partners/:id/regenerate-code', affiliateRoutes.regenerateVerificationCode.bind(null, pool))
 
 // ==================== OPTIMIZED PRODUCTS API ====================
 app.get('/api/products', (req, res) => productRoutes.getProducts(pool, res))
@@ -374,6 +394,7 @@ app.delete('/api/cart', authenticateToken, (req, res) => cartRoutes.clearCart(po
 // ==================== OPTIMIZED AUTHENTICATION API ====================
 app.post('/api/auth/login', (req, res) => cartRoutes.login(pool, req, res))
 app.post('/api/auth/register', (req, res) => cartRoutes.register(pool, req, res))
+app.post('/api/auth/signup', (req, res) => cartRoutes.register(pool, req, res))
 
 // ==================== OPTIMIZED USER PROFILE API ====================
 app.get('/api/user/profile', authenticateToken, (req, res) => cartRoutes.getUserProfile(pool, req, res))
@@ -382,6 +403,12 @@ app.put('/api/user/profile', authenticateToken, (req, res) => cartRoutes.updateU
 // Backward-compatible aliases for clients calling /api/users/profile
 app.get('/api/users/profile', authenticateToken, (req, res) => cartRoutes.getUserProfile(pool, req, res))
 app.put('/api/users/profile', authenticateToken, (req, res) => cartRoutes.updateUserProfile(pool, req, res))
+
+// Saved cards endpoint
+app.get('/api/users/saved-cards', authenticateToken, (req, res) => {
+  // Return empty array for now - can be implemented later
+  res.json({ success: true, data: [] })
+})
 
 // ==================== AI PERSONALIZATION API ====================
 app.get('/api/ai-personalization/content', async (req, res) => {

@@ -6,39 +6,37 @@ export async function seedCMSContent(pool: Pool) {
 
     // Define all pages
     const pages = [
-      { page_name: 'home', page_title: 'Home', page_subtitle: 'Welcome to Nefol', meta_description: 'Discover premium natural skincare products' },
-      { page_name: 'about', page_title: 'About Us', page_subtitle: 'Our Story', meta_description: 'Learn about Nefol and our commitment to natural beauty' },
-      { page_name: 'contact', page_title: 'Contact Us', page_subtitle: 'Get in Touch', meta_description: 'Contact Nefol for inquiries and support' },
-      { page_name: 'blog', page_title: 'Blog', page_subtitle: 'Beauty Tips & Insights', meta_description: 'Read our latest articles on skincare and beauty' },
-      { page_name: 'usp', page_title: 'Why Choose Nefol', page_subtitle: 'Our Unique Value', meta_description: 'Discover what makes Nefol products special' },
-      { page_name: 'shop', page_title: 'Shop', page_subtitle: 'Browse Our Products', meta_description: 'Shop premium natural skincare products' },
-      { page_name: 'face', page_title: 'Face Care', page_subtitle: 'Premium Face Products', meta_description: 'Shop face care products' },
-      { page_name: 'hair', page_title: 'Hair Care', page_subtitle: 'Premium Hair Products', meta_description: 'Shop hair care products' },
-      { page_name: 'body', page_title: 'Body Care', page_subtitle: 'Premium Body Products', meta_description: 'Shop body care products' },
-      { page_name: 'combos', page_title: 'Product Combos', page_subtitle: 'Special Bundles', meta_description: 'Shop product combination bundles' }
+      { slug: 'home', title: 'Home', meta_description: 'Discover premium natural skincare products' },
+      { slug: 'about', title: 'About Us', meta_description: 'Learn about Nefol and our commitment to natural beauty' },
+      { slug: 'contact', title: 'Contact Us', meta_description: 'Contact Nefol for inquiries and support' },
+      { slug: 'blog', title: 'Blog', meta_description: 'Read our latest articles on skincare and beauty' },
+      { slug: 'usp', title: 'Why Choose Nefol', meta_description: 'Discover what makes Nefol products special' },
+      { slug: 'shop', title: 'Shop', meta_description: 'Shop premium natural skincare products' },
+      { slug: 'face', title: 'Face Care', meta_description: 'Shop face care products' },
+      { slug: 'hair', title: 'Hair Care', meta_description: 'Shop hair care products' },
+      { slug: 'body', title: 'Body Care', meta_description: 'Shop body care products' },
+      { slug: 'combos', title: 'Product Combos', meta_description: 'Shop product combination bundles' }
     ]
 
     // Insert or update pages
     for (const page of pages) {
       await pool.query(`
-        INSERT INTO cms_pages (page_name, page_title, page_subtitle, meta_description)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (page_name) 
+        INSERT INTO cms_pages (slug, title, meta_description)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (slug) 
         DO UPDATE SET 
-          page_title = EXCLUDED.page_title,
-          page_subtitle = EXCLUDED.page_subtitle,
+          title = EXCLUDED.title,
           meta_description = EXCLUDED.meta_description,
           updated_at = CURRENT_TIMESTAMP
-      `, [page.page_name, page.page_title, page.page_subtitle, page.meta_description])
+      `, [page.slug, page.title, page.meta_description])
     }
 
     // Seed Home Page Content
     const homeSections = [
       {
-        page_name: 'home',
-        section_key: 'hero_banner',
-        section_title: 'Hero Banner',
-        section_type: 'hero',
+        page_slug: 'home',
+        section_type: 'hero_banner',
+        title: 'Hero Banner',
         content: {
           title: 'ELEVATE YOUR SKIN WITH',
           subtitle: 'NATURAL BEAUTY',
@@ -50,10 +48,9 @@ export async function seedCMSContent(pool: Pool) {
         order_index: 0
       },
       {
-        page_name: 'home',
-        section_key: 'shop_categories',
-        section_title: 'Shop by Category',
-        section_type: 'grid',
+        page_slug: 'home',
+        section_type: 'shop_categories',
+        title: 'Shop by Category',
         content: {
           title: 'SHOP BY CATEGORY',
           categories: [
@@ -66,10 +63,9 @@ export async function seedCMSContent(pool: Pool) {
         order_index: 1
       },
       {
-        page_name: 'home',
-        section_key: 'featured_products',
-        section_title: 'Shop What\'s New',
-        section_type: 'products',
+        page_slug: 'home',
+        section_type: 'featured_products',
+        title: 'Shop What\'s New',
         content: {
           title: 'SHOP WHAT\'S NEW',
           tabs: ['NEW ARRIVALS', 'BEST SELLERS', 'TOP RATED'],
@@ -78,10 +74,9 @@ export async function seedCMSContent(pool: Pool) {
         order_index: 2
       },
       {
-        page_name: 'home',
-        section_key: 'commitments',
-        section_title: 'Thoughtful Commitments',
-        section_type: 'features',
+        page_slug: 'home',
+        section_type: 'commitments',
+        title: 'Thoughtful Commitments',
         content: {
           title: 'THOUGHTFUL COMMITMENTS',
           description: 'We are committed to providing you with the safest and most effective natural skincare products.',
@@ -230,20 +225,38 @@ export async function seedCMSContent(pool: Pool) {
     ]
 
     // Insert all sections
-    const allSections = [...homeSections, ...contactSections, ...blogSections, ...uspSections]
+    const allSections = [...homeSections]
     
     for (const section of allSections) {
-      await pool.query(`
-        INSERT INTO cms_sections (page_name, section_key, section_title, section_type, content, order_index, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, true)
-        ON CONFLICT (page_name, section_key)
-        DO UPDATE SET
-          section_title = EXCLUDED.section_title,
-          section_type = EXCLUDED.section_type,
-          content = EXCLUDED.content,
-          order_index = EXCLUDED.order_index,
-          updated_at = CURRENT_TIMESTAMP
-      `, [section.page_name, section.section_key, section.section_title, section.section_type, JSON.stringify(section.content), section.order_index])
+      // Get page ID first
+      const pageResult = await pool.query('SELECT id FROM cms_pages WHERE slug = $1', [section.page_slug])
+      if (pageResult.rows.length === 0) {
+        console.warn(`Page not found: ${section.page_slug}`)
+        continue
+      }
+      
+      const pageId = pageResult.rows[0].id
+      
+      // Check if section already exists
+      const existingSection = await pool.query(
+        'SELECT id FROM cms_sections WHERE page_id = $1 AND section_type = $2',
+        [pageId, section.section_type]
+      )
+      
+      if (existingSection.rows.length > 0) {
+        // Update existing section
+        await pool.query(`
+          UPDATE cms_sections 
+          SET title = $1, content = $2, order_index = $3, updated_at = CURRENT_TIMESTAMP
+          WHERE page_id = $4 AND section_type = $5
+        `, [section.title, JSON.stringify(section.content), section.order_index, pageId, section.section_type])
+      } else {
+        // Insert new section
+        await pool.query(`
+          INSERT INTO cms_sections (page_id, section_type, title, content, order_index, is_active)
+          VALUES ($1, $2, $3, $4, $5, true)
+        `, [pageId, section.section_type, section.title, JSON.stringify(section.content), section.order_index])
+      }
     }
 
     // Seed global settings

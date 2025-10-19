@@ -18,26 +18,25 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS cms_pages (
         id SERIAL PRIMARY KEY,
-        page_name VARCHAR(255) UNIQUE NOT NULL,
-        page_title TEXT,
-        page_subtitle TEXT,
+        slug VARCHAR(255) UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        content JSONB DEFAULT '{}'::jsonb,
         meta_description TEXT,
+        is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS cms_sections (
         id SERIAL PRIMARY KEY,
-        page_name VARCHAR(255) NOT NULL,
-        section_key VARCHAR(255) NOT NULL,
-        section_title TEXT,
-        section_type VARCHAR(50) NOT NULL,
-        content JSONB,
+        page_id INTEGER NOT NULL REFERENCES cms_pages(id) ON DELETE CASCADE,
+        section_type TEXT NOT NULL,
+        title TEXT,
+        content JSONB DEFAULT '{}'::jsonb,
         order_index INTEGER DEFAULT 0,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(page_name, section_key)
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS cms_settings (
@@ -56,7 +55,7 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   // GET all pages
   router.get('/pages', async (req: Request, res: Response) => {
     try {
-      const { rows } = await pool.query('SELECT * FROM cms_pages ORDER BY page_name')
+      const { rows } = await pool.query('SELECT * FROM cms_pages ORDER BY slug')
       res.json(rows)
     } catch (error: any) {
       res.status(500).json({ error: error.message })
@@ -64,13 +63,13 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   })
 
   // GET single page with all sections
-  router.get('/pages/:pageName', async (req: Request, res: Response) => {
+  router.get('/pages/:slug', async (req: Request, res: Response) => {
     try {
-      const { pageName } = req.params
-      const pageResult = await pool.query('SELECT * FROM cms_pages WHERE page_name = $1', [pageName])
+      const { slug } = req.params
+      const pageResult = await pool.query('SELECT * FROM cms_pages WHERE slug = $1', [slug])
       const sectionsResult = await pool.query(
-        'SELECT * FROM cms_sections WHERE page_name = $1 AND is_active = true ORDER BY order_index',
-        [pageName]
+        'SELECT * FROM cms_sections WHERE page_id = $1 AND is_active = true ORDER BY order_index',
+        [pageResult.rows[0]?.id]
       )
       
       res.json({
@@ -85,28 +84,28 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   // CREATE or UPDATE page
   router.post('/pages', async (req: Request, res: Response) => {
     try {
-      const { page_name, page_title, page_subtitle, meta_description } = req.body
+      const { slug, title, content, meta_description } = req.body
       
-      const existingResult = await pool.query('SELECT id FROM cms_pages WHERE page_name = $1', [page_name])
+      const existingResult = await pool.query('SELECT id FROM cms_pages WHERE slug = $1', [slug])
       
       if (existingResult.rows.length > 0) {
         await pool.query(
           `UPDATE cms_pages 
-           SET page_title = $1, page_subtitle = $2, meta_description = $3, updated_at = CURRENT_TIMESTAMP
-           WHERE page_name = $4`,
-          [page_title, page_subtitle, meta_description, page_name]
+           SET title = $1, content = $2, meta_description = $3, updated_at = CURRENT_TIMESTAMP
+           WHERE slug = $4`,
+          [title, content, meta_description, slug]
         )
         
-        broadcastCMSUpdate('page_updated', { page_name, page_title, page_subtitle })
+        broadcastCMSUpdate('page_updated', { slug, title })
         res.json({ message: 'Page updated successfully', id: existingResult.rows[0].id })
       } else {
         const result = await pool.query(
-          `INSERT INTO cms_pages (page_name, page_title, page_subtitle, meta_description)
+          `INSERT INTO cms_pages (slug, title, content, meta_description)
            VALUES ($1, $2, $3, $4) RETURNING id`,
-          [page_name, page_title, page_subtitle, meta_description]
+          [slug, title, content, meta_description]
         )
         
-        broadcastCMSUpdate('page_created', { page_name, page_title, page_subtitle })
+        broadcastCMSUpdate('page_created', { slug, title })
         res.json({ message: 'Page created successfully', id: result.rows[0].id })
       }
     } catch (error: any) {
@@ -115,17 +114,20 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   })
 
   // DELETE page
-  router.delete('/pages/:pageName', async (req: Request, res: Response) => {
+  router.delete('/pages/:slug', async (req: Request, res: Response) => {
     try {
-      const { pageName } = req.params
+      const { slug } = req.params
       
       // Delete all sections for this page
-      await pool.query('DELETE FROM cms_sections WHERE page_name = $1', [pageName])
+      await pool.query(`
+        DELETE FROM cms_sections 
+        WHERE page_id = (SELECT id FROM cms_pages WHERE slug = $1)
+      `, [slug])
       
       // Delete the page
-      await pool.query('DELETE FROM cms_pages WHERE page_name = $1', [pageName])
+      await pool.query('DELETE FROM cms_pages WHERE slug = $1', [slug])
       
-      broadcastCMSUpdate('page_deleted', { page_name: pageName })
+      broadcastCMSUpdate('page_deleted', { slug })
       res.json({ message: 'Page and all sections deleted successfully' })
     } catch (error: any) {
       res.status(500).json({ error: error.message })
@@ -133,13 +135,14 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   })
 
   // GET all sections for a page
-  router.get('/sections/:pageName', async (req: Request, res: Response) => {
+  router.get('/sections/:pageSlug', async (req: Request, res: Response) => {
     try {
-      const { pageName } = req.params
-      const { rows } = await pool.query(
-        'SELECT * FROM cms_sections WHERE page_name = $1 ORDER BY order_index',
-        [pageName]
-      )
+      const { pageSlug } = req.params
+      const { rows } = await pool.query(`
+        SELECT s.* FROM cms_sections s
+        JOIN cms_pages p ON s.page_id = p.id
+        WHERE p.slug = $1 ORDER BY s.order_index
+      `, [pageSlug])
       
       res.json(rows)
     } catch (error: any) {
@@ -150,31 +153,40 @@ export function createCMSRouter(pool: Pool, io?: SocketIOServer) {
   // CREATE or UPDATE section
   router.post('/sections', async (req: Request, res: Response) => {
     try {
-      const { page_name, section_key, section_title, section_type, content, order_index, is_active } = req.body
+      const { page_slug, section_type, title, content, order_index, is_active } = req.body
       
+      // Get page ID
+      const pageResult = await pool.query('SELECT id FROM cms_pages WHERE slug = $1', [page_slug])
+      if (pageResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Page not found' })
+      }
+      
+      const pageId = pageResult.rows[0].id
+      
+      // Check if section exists (by page_id and section_type)
       const existingResult = await pool.query(
-        'SELECT id FROM cms_sections WHERE page_name = $1 AND section_key = $2',
-        [page_name, section_key]
+        'SELECT id FROM cms_sections WHERE page_id = $1 AND section_type = $2',
+        [pageId, section_type]
       )
       
       if (existingResult.rows.length > 0) {
         await pool.query(
           `UPDATE cms_sections 
-           SET section_title = $1, section_type = $2, content = $3, order_index = $4, is_active = $5, updated_at = CURRENT_TIMESTAMP
-           WHERE page_name = $6 AND section_key = $7`,
-          [section_title, section_type, content, order_index || 0, is_active !== false, page_name, section_key]
+           SET title = $1, content = $2, order_index = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP
+           WHERE page_id = $5 AND section_type = $6`,
+          [title, content, order_index || 0, is_active !== false, pageId, section_type]
         )
         
-        broadcastCMSUpdate('section_updated', { page_name, section_key, section_title, content })
+        broadcastCMSUpdate('section_updated', { page_slug, section_type, title, content })
         res.json({ message: 'Section updated successfully', id: existingResult.rows[0].id })
       } else {
         const result = await pool.query(
-          `INSERT INTO cms_sections (page_name, section_key, section_title, section_type, content, order_index, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-          [page_name, section_key, section_title, section_type, content, order_index || 0, is_active !== false]
+          `INSERT INTO cms_sections (page_id, section_type, title, content, order_index, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [pageId, section_type, title, content, order_index || 0, is_active !== false]
         )
         
-        broadcastCMSUpdate('section_created', { page_name, section_key, section_title, content })
+        broadcastCMSUpdate('section_created', { page_slug, section_type, title, content })
         res.json({ message: 'Section created successfully', id: result.rows[0].id })
       }
     } catch (error: any) {

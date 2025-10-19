@@ -3,6 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
+import { Pool } from 'pg'
 
 const router = express.Router()
 
@@ -35,9 +36,13 @@ const upload = multer({
   }
 })
 
-// In-memory storage for blog requests (in production, use a database)
-let blogRequests: any[] = []
-let blogPosts: any[] = []
+// Database pool (will be injected)
+let pool: Pool
+
+// Initialize database connection
+export function initBlogRouter(databasePool: Pool) {
+  pool = databasePool
+}
 
 // Submit blog request
 router.post('/request', upload.array('images', 5), async (req, res) => {
@@ -49,27 +54,25 @@ router.post('/request', upload.array('images', 5), async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' })
     }
 
-    const blogRequest = {
-      id: uuidv4(),
-      title,
-      content,
-      excerpt,
-      author_name,
-      author_email,
-      images: images.map(img => `/uploads/blog/${img.filename}`),
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
     }
 
-    blogRequests.push(blogRequest)
+    const imageUrls = images.map(img => `/uploads/blog/${img.filename}`)
+
+    // Insert into database
+    const { rows } = await pool.query(`
+      INSERT INTO blog_posts (title, content, excerpt, author_name, author_email, images, status)
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+      RETURNING id, created_at
+    `, [title, content, excerpt, author_name, author_email, JSON.stringify(imageUrls)])
 
     // Send email notification to admin (placeholder)
     console.log(`📧 New blog request from ${author_name}: ${title}`)
 
     res.json({
       message: 'Blog request submitted successfully',
-      requestId: blogRequest.id
+      requestId: rows[0].id
     })
   } catch (error) {
     console.error('Error submitting blog request:', error)
@@ -78,10 +81,19 @@ router.post('/request', upload.array('images', 5), async (req, res) => {
 })
 
 // Get all blog posts (approved only for public)
-router.get('/posts', (req, res) => {
+router.get('/posts', async (req, res) => {
   try {
-    const approvedPosts = blogPosts.filter(post => post.status === 'approved')
-    res.json(approvedPosts)
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
+    }
+
+    const { rows } = await pool.query(`
+      SELECT * FROM blog_posts 
+      WHERE status = 'approved' 
+      ORDER BY created_at DESC
+    `)
+    
+    res.json(rows)
   } catch (error) {
     console.error('Error fetching blog posts:', error)
     res.status(500).json({ message: 'Failed to fetch blog posts' })
@@ -89,13 +101,22 @@ router.get('/posts', (req, res) => {
 })
 
 // Get single blog post
-router.get('/posts/:id', (req, res) => {
+router.get('/posts/:id', async (req, res) => {
   try {
-    const post = blogPosts.find(p => p.id === req.params.id)
-    if (!post) {
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
+    }
+
+    const { rows } = await pool.query(`
+      SELECT * FROM blog_posts 
+      WHERE id = $1 AND status = 'approved'
+    `, [req.params.id])
+    
+    if (rows.length === 0) {
       return res.status(404).json({ message: 'Blog post not found' })
     }
-    res.json(post)
+    
+    res.json(rows[0])
   } catch (error) {
     console.error('Error fetching blog post:', error)
     res.status(500).json({ message: 'Failed to fetch blog post' })
@@ -104,9 +125,19 @@ router.get('/posts/:id', (req, res) => {
 
 // Admin routes (protected)
 // Get all blog requests (admin only)
-router.get('/admin/requests', (req, res) => {
+router.get('/admin/requests', async (req, res) => {
   try {
-    res.json(blogRequests)
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
+    }
+
+    const { rows } = await pool.query(`
+      SELECT * FROM blog_posts 
+      WHERE status = 'pending' 
+      ORDER BY created_at DESC
+    `)
+    
+    res.json(rows)
   } catch (error) {
     console.error('Error fetching blog requests:', error)
     res.status(500).json({ message: 'Failed to fetch blog requests' })
@@ -114,9 +145,18 @@ router.get('/admin/requests', (req, res) => {
 })
 
 // Get all blog posts (admin only)
-router.get('/admin/posts', (req, res) => {
+router.get('/admin/posts', async (req, res) => {
   try {
-    res.json(blogPosts)
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
+    }
+
+    const { rows } = await pool.query(`
+      SELECT * FROM blog_posts 
+      ORDER BY created_at DESC
+    `)
+    
+    res.json(rows)
   } catch (error) {
     console.error('Error fetching blog posts:', error)
     res.status(500).json({ message: 'Failed to fetch blog posts' })
@@ -124,38 +164,32 @@ router.get('/admin/posts', (req, res) => {
 })
 
 // Approve blog request
-router.post('/admin/approve/:id', (req, res) => {
+router.post('/admin/approve/:id', async (req, res) => {
   try {
     const requestId = req.params.id
     const { featured = false } = req.body
 
-    const requestIndex = blogRequests.findIndex(req => req.id === requestId)
-    if (requestIndex === -1) {
-      return res.status(404).json({ message: 'Blog request not found' })
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
     }
 
-    const request = blogRequests[requestIndex]
-    
-    // Create blog post from request
-    const blogPost = {
-      ...request,
-      status: 'approved',
-      featured,
-      updated_at: new Date().toISOString()
+    const { rows } = await pool.query(`
+      UPDATE blog_posts 
+      SET status = 'approved', featured = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND status = 'pending'
+      RETURNING *
+    `, [featured, requestId])
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Blog request not found or already processed' })
     }
-
-    // Add to blog posts
-    blogPosts.push(blogPost)
-
-    // Remove from requests
-    blogRequests.splice(requestIndex, 1)
 
     // Send email notification to author (placeholder)
-    console.log(`📧 Blog post approved for ${request.author_name}: ${request.title}`)
+    console.log(`📧 Blog post approved for ${rows[0].author_name}: ${rows[0].title}`)
 
     res.json({
       message: 'Blog request approved successfully',
-      post: blogPost
+      post: rows[0]
     })
   } catch (error) {
     console.error('Error approving blog request:', error)
@@ -164,28 +198,28 @@ router.post('/admin/approve/:id', (req, res) => {
 })
 
 // Reject blog request
-router.post('/admin/reject/:id', (req, res) => {
+router.post('/admin/reject/:id', async (req, res) => {
   try {
     const requestId = req.params.id
     const { reason } = req.body
 
-    const requestIndex = blogRequests.findIndex(req => req.id === requestId)
-    if (requestIndex === -1) {
-      return res.status(404).json({ message: 'Blog request not found' })
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
     }
 
-    const request = blogRequests[requestIndex]
-    
-    // Update request status
-    blogRequests[requestIndex] = {
-      ...request,
-      status: 'rejected',
-      rejection_reason: reason,
-      updated_at: new Date().toISOString()
+    const { rows } = await pool.query(`
+      UPDATE blog_posts 
+      SET status = 'rejected', rejection_reason = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND status = 'pending'
+      RETURNING *
+    `, [reason, requestId])
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Blog request not found or already processed' })
     }
 
     // Send email notification to author (placeholder)
-    console.log(`📧 Blog post rejected for ${request.author_name}: ${request.title}. Reason: ${reason}`)
+    console.log(`📧 Blog post rejected for ${rows[0].author_name}: ${rows[0].title}. Reason: ${reason}`)
 
     res.json({
       message: 'Blog request rejected successfully'
@@ -197,25 +231,49 @@ router.post('/admin/reject/:id', (req, res) => {
 })
 
 // Update blog post
-router.put('/admin/posts/:id', (req, res) => {
+router.put('/admin/posts/:id', async (req, res) => {
   try {
     const postId = req.params.id
     const updates = req.body
 
-    const postIndex = blogPosts.findIndex(post => post.id === postId)
-    if (postIndex === -1) {
-      return res.status(404).json({ message: 'Blog post not found' })
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
     }
 
-    blogPosts[postIndex] = {
-      ...blogPosts[postIndex],
-      ...updates,
-      updated_at: new Date().toISOString()
+    // Build dynamic update query
+    const updateFields = []
+    const values = []
+    let paramCount = 1
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key !== 'id' && value !== undefined) {
+        updateFields.push(`${key} = $${paramCount}`)
+        values.push(value)
+        paramCount++
+      }
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No fields to update' })
+    }
+
+    updateFields.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(postId)
+
+    const { rows } = await pool.query(`
+      UPDATE blog_posts 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING *
+    `, values)
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Blog post not found' })
     }
 
     res.json({
       message: 'Blog post updated successfully',
-      post: blogPosts[postIndex]
+      post: rows[0]
     })
   } catch (error) {
     console.error('Error updating blog post:', error)
@@ -224,27 +282,42 @@ router.put('/admin/posts/:id', (req, res) => {
 })
 
 // Delete blog post
-router.delete('/admin/posts/:id', (req, res) => {
+router.delete('/admin/posts/:id', async (req, res) => {
   try {
     const postId = req.params.id
 
-    const postIndex = blogPosts.findIndex(post => post.id === postId)
-    if (postIndex === -1) {
+    if (!pool) {
+      return res.status(500).json({ message: 'Database not initialized' })
+    }
+
+    // Get post info before deleting
+    const { rows: postRows } = await pool.query(`
+      SELECT images FROM blog_posts WHERE id = $1
+    `, [postId])
+
+    if (postRows.length === 0) {
       return res.status(404).json({ message: 'Blog post not found' })
     }
 
-    const post = blogPosts[postIndex]
+    const post = postRows[0]
     
     // Delete associated images
-    post.images.forEach((imagePath: string) => {
-      const fullPath = path.join(__dirname, '../../uploads/blog', path.basename(imagePath))
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath)
+    if (post.images) {
+      try {
+        const imageArray = JSON.parse(post.images)
+        imageArray.forEach((imagePath: string) => {
+          const fullPath = path.join(__dirname, '../../uploads/blog', path.basename(imagePath))
+          if (fs.existsSync(fullPath)) {
+            fs.unlinkSync(fullPath)
+          }
+        })
+      } catch (e) {
+        console.warn('Could not parse images array:', e)
       }
-    })
+    }
 
-    // Remove from blog posts
-    blogPosts.splice(postIndex, 1)
+    // Delete from database
+    await pool.query('DELETE FROM blog_posts WHERE id = $1', [postId])
 
     res.json({
       message: 'Blog post deleted successfully'

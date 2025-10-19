@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, ChevronUp, ChevronDown, Wifi, WifiOff, CheckCircle, XCircle, Clock, User, Calendar } from 'lucide-react'
-import { socketService } from '../services/socket'
+import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, ChevronUp, ChevronDown, Wifi, WifiOff, Settings } from 'lucide-react'
+import { socketService } from '../../services/socket'
 
 interface CMSPage {
   id: number
@@ -25,7 +25,7 @@ interface CMSSection {
   updated_at: string
 }
 
-export default function CMS() {
+export default function CMSManagement() {
   const [pages, setPages] = useState<CMSPage[]>([])
   const [selectedPage, setSelectedPage] = useState<string>('')
   const [sections, setSections] = useState<CMSSection[]>([])
@@ -36,12 +36,7 @@ export default function CMS() {
   const [showSectionForm, setShowSectionForm] = useState(false)
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  
-  // Blog management state
-  const [activeTab, setActiveTab] = useState<'cms' | 'blog'>('cms')
-  const [blogRequests, setBlogRequests] = useState<any[]>([])
-  const [blogPosts, setBlogPosts] = useState<any[]>([])
-  const [blogLoading, setBlogLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'pages' | 'sections' | 'settings'>('pages')
 
   const API_BASE = 'http://192.168.1.66:4000'
 
@@ -50,9 +45,19 @@ export default function CMS() {
     try {
       const response = await fetch(`${API_BASE}/api/cms/pages`)
       const data = await response.json()
-      setPages(data)
-      if (data.length > 0 && !selectedPage) {
-        setSelectedPage(data[0].page_name)
+      // Transform data to match our interface
+      const transformedData = data.map((page: any) => ({
+        id: page.id,
+        page_name: page.slug,
+        page_title: page.title,
+        page_subtitle: '',
+        meta_description: page.meta_description || '',
+        created_at: page.created_at,
+        updated_at: page.updated_at
+      }))
+      setPages(transformedData)
+      if (transformedData.length > 0 && !selectedPage) {
+        setSelectedPage(transformedData[0].page_name)
       }
     } catch (error) {
       console.error('Failed to fetch pages:', error)
@@ -64,7 +69,20 @@ export default function CMS() {
     try {
       const response = await fetch(`${API_BASE}/api/cms/sections/${pageName}`)
       const data = await response.json()
-      setSections(data)
+      // Transform data to match our interface
+      const transformedData = data.map((section: any) => ({
+        id: section.id,
+        page_name: pageName,
+        section_key: section.section_type,
+        section_title: section.title || section.section_type,
+        section_type: section.section_type,
+        content: section.content,
+        order_index: section.order_index,
+        is_active: section.is_active,
+        created_at: section.created_at,
+        updated_at: section.updated_at
+      }))
+      setSections(transformedData)
     } catch (error) {
       console.error('Failed to fetch sections:', error)
     }
@@ -104,13 +122,6 @@ export default function CMS() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'blog') {
-      fetchBlogRequests()
-      fetchBlogPosts()
-    }
-  }, [activeTab])
-
-  useEffect(() => {
     if (selectedPage) {
       fetchSections(selectedPage)
     }
@@ -122,7 +133,12 @@ export default function CMS() {
       const response = await fetch(`${API_BASE}/api/cms/pages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pageData)
+        body: JSON.stringify({
+          slug: pageData.page_name,
+          title: pageData.page_title,
+          content: {},
+          meta_description: pageData.meta_description
+        })
       })
       
       if (response.ok) {
@@ -157,8 +173,12 @@ export default function CMS() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...sectionData,
-          page_name: selectedPage
+          page_slug: selectedPage,
+          section_type: sectionData.section_type,
+          title: sectionData.section_title,
+          content: sectionData.content,
+          order_index: sectionData.order_index,
+          is_active: sectionData.is_active
         })
       })
       
@@ -204,82 +224,6 @@ export default function CMS() {
     }
   }
 
-  // Blog management functions
-  const fetchBlogRequests = async () => {
-    try {
-      setBlogLoading(true)
-      const response = await fetch(`${API_BASE}/api/blog/admin/requests`)
-      const data = await response.json()
-      setBlogRequests(data)
-    } catch (error) {
-      console.error('Failed to fetch blog requests:', error)
-    } finally {
-      setBlogLoading(false)
-    }
-  }
-
-  const fetchBlogPosts = async () => {
-    try {
-      setBlogLoading(true)
-      const response = await fetch(`${API_BASE}/api/blog/admin/posts`)
-      const data = await response.json()
-      setBlogPosts(data)
-    } catch (error) {
-      console.error('Failed to fetch blog posts:', error)
-    } finally {
-      setBlogLoading(false)
-    }
-  }
-
-  const approveBlogRequest = async (requestId: string, featured = false) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/blog/admin/approve/${requestId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ featured })
-      })
-      
-      if (response.ok) {
-        await fetchBlogRequests()
-        await fetchBlogPosts()
-      }
-    } catch (error) {
-      console.error('Failed to approve blog request:', error)
-    }
-  }
-
-  const rejectBlogRequest = async (requestId: string, reason: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/blog/admin/reject/${requestId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
-      })
-      
-      if (response.ok) {
-        await fetchBlogRequests()
-      }
-    } catch (error) {
-      console.error('Failed to reject blog request:', error)
-    }
-  }
-
-  const deleteBlogPost = async (postId: string) => {
-    if (!confirm('Are you sure you want to delete this blog post?')) return
-    
-    try {
-      const response = await fetch(`${API_BASE}/api/blog/admin/posts/${postId}`, {
-        method: 'DELETE'
-      })
-      
-      if (response.ok) {
-        await fetchBlogPosts()
-      }
-    } catch (error) {
-      console.error('Failed to delete blog post:', error)
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -312,49 +256,105 @@ export default function CMS() {
             )}
           </div>
         </div>
-        {activeTab === 'cms' && (
-          <button
-            onClick={() => {
-              setEditingPage(null)
-              setShowPageForm(true)
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-5 h-5" />
-            New Page
-          </button>
-        )}
+        <button
+          onClick={() => {
+            setEditingPage(null)
+            setShowPageForm(true)
+          }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <Plus className="w-5 h-5" />
+          New Page
+        </button>
       </div>
 
       {/* Tab Navigation */}
       <div className="flex gap-4 mb-6">
         <button
-          onClick={() => setActiveTab('cms')}
+          onClick={() => setActiveTab('pages')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'cms'
+            activeTab === 'pages'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
-          CMS Pages
+          Pages
         </button>
         <button
-          onClick={() => setActiveTab('blog')}
+          onClick={() => setActiveTab('sections')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'blog'
+            activeTab === 'sections'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
-          Blog Management
+          Sections
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'settings'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          <Settings className="w-4 h-4 mr-2" />
+          Settings
         </button>
       </div>
 
-      {activeTab === 'cms' ? (
+      {activeTab === 'pages' && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">CMS Pages</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pages.map((page) => (
+              <div
+                key={page.id}
+                className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">{page.page_title || page.page_name}</h3>
+                    <p className="text-sm text-gray-500 mb-2">{page.page_name}</p>
+                    {page.page_subtitle && (
+                      <p className="text-sm text-gray-600 mb-2">{page.page_subtitle}</p>
+                    )}
+                    {page.meta_description && (
+                      <p className="text-xs text-gray-500 line-clamp-2">{page.meta_description}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingPage(page)
+                        setShowPageForm(true)
+                      }}
+                      className="p-1 hover:bg-gray-200 rounded"
+                    >
+                      <Edit2 className="w-4 h-4 text-blue-600" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePage(page.page_name)}
+                      className="p-1 hover:bg-gray-200 rounded"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </button>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-400">
+                  Created: {new Date(page.created_at).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'sections' && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Pages Sidebar */}
           <div className="lg:col-span-1 bg-white rounded-lg shadow p-4">
-            <h2 className="text-lg font-semibold mb-4">Pages</h2>
+            <h2 className="text-lg font-semibold mb-4">Select Page</h2>
             <div className="space-y-2">
               {pages.map((page) => (
                 <div
@@ -369,27 +369,6 @@ export default function CMS() {
                   <div className="flex-1">
                     <div className="font-medium">{page.page_title || page.page_name}</div>
                     <div className="text-xs text-gray-500">{page.page_name}</div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingPage(page)
-                        setShowPageForm(true)
-                      }}
-                      className="p-1 hover:bg-gray-200 rounded"
-                    >
-                      <Edit2 className="w-4 h-4 text-blue-600" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeletePage(page.page_name)
-                      }}
-                      className="p-1 hover:bg-gray-200 rounded"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </button>
                   </div>
                 </div>
               ))}
@@ -503,167 +482,13 @@ export default function CMS() {
             )}
           </div>
         </div>
-      ) : (
-        /* Blog Management Content */
-        <div className="space-y-6">
-          {/* Blog Requests */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold">Pending Blog Requests</h2>
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-yellow-500" />
-                <span className="text-sm text-gray-600">{blogRequests.length} pending</span>
-              </div>
-            </div>
+      )}
 
-            {blogLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading blog requests...</p>
-              </div>
-            ) : blogRequests.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                No pending blog requests
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {blogRequests.map((request) => (
-                  <div key={request.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold mb-2">{request.title}</h3>
-                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                          <div className="flex items-center gap-1">
-                            <User className="w-4 h-4" />
-                            {request.author_name}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(request.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <p className="text-gray-700 mb-3">{request.excerpt}</p>
-                        {request.images && request.images.length > 0 && (
-                          <div className="flex gap-2 mb-3">
-                            {request.images.map((image: string, index: number) => (
-                              <img
-                                key={index}
-                                src={`http://192.168.1.66:4000${image}`}
-                                alt={`Blog image ${index + 1}`}
-                                className="w-16 h-16 object-cover rounded"
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => approveBlogRequest(request.id, false)}
-                          className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => approveBlogRequest(request.id, true)}
-                          className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          Featured
-                        </button>
-                        <button
-                          onClick={() => {
-                            const reason = prompt('Reason for rejection:')
-                            if (reason) rejectBlogRequest(request.id, reason)
-                          }}
-                          className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                        >
-                          <XCircle className="w-4 h-4" />
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 rounded p-3 text-sm">
-                      <div className="font-medium mb-2">Full Content:</div>
-                      <div className="whitespace-pre-wrap">{request.content}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Approved Blog Posts */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold">Approved Blog Posts</h2>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-sm text-gray-600">{blogPosts.length} published</span>
-              </div>
-            </div>
-
-            {blogLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading blog posts...</p>
-              </div>
-            ) : blogPosts.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                No approved blog posts yet
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {blogPosts.map((post) => (
-                  <div key={post.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-lg font-semibold">{post.title}</h3>
-                          {post.featured && (
-                            <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                              Featured
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                          <div className="flex items-center gap-1">
-                            <User className="w-4 h-4" />
-                            {post.author_name}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(post.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <p className="text-gray-700">{post.excerpt}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => deleteBlogPost(post.id)}
-                          className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    {post.images && post.images.length > 0 && (
-                      <div className="flex gap-2">
-                        {post.images.map((image: string, index: number) => (
-                          <img
-                            key={index}
-                            src={`http://192.168.1.66:4000${image}`}
-                            alt={`Blog image ${index + 1}`}
-                            className="w-16 h-16 object-cover rounded"
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+      {activeTab === 'settings' && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">CMS Settings</h2>
+          <div className="text-center py-12 text-gray-500">
+            CMS Settings panel coming soon...
           </div>
         </div>
       )}
@@ -947,4 +772,3 @@ function SectionFormModal({
     </div>
   )
 }
-

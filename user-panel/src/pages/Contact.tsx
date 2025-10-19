@@ -1,3 +1,5 @@
+import React from 'react'
+
 export default function Contact() {
   return (
     <main className="min-h-screen py-10" style={{backgroundColor: '#F4F9F9'}}>
@@ -72,14 +74,6 @@ export default function Contact() {
               <div>
                 <h3 className="mb-4 text-lg font-medium" style={{color: '#1B4965'}}>Office Addresses</h3>
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-gray-200 p-4" style={{backgroundColor: '#D0E8F2'}}>
-                    <h4 className="font-medium" style={{color: '#1B4965'}}>Lucknow Office</h4>
-                    <p className="font-light" style={{color: '#9DB4C0'}}>
-                      703, BCC Tower, Sultanpur Road,<br />
-                      Arjunganj, Lucknow,<br />
-                      Uttar Pradesh – 226002, India
-                    </p>
-                  </div>
                   <div className="rounded-lg border border-gray-200 p-4" style={{backgroundColor: '#D0E8F2'}}>
                     <h4 className="font-medium" style={{color: '#1B4965'}}>Greater Noida Office</h4>
                     <p className="font-light" style={{color: '#9DB4C0'}}>
@@ -158,13 +152,20 @@ export default function Contact() {
                 <span className="text-sm font-light" style={{color: '#1B4965'}}>Dedicated support team</span>
               </div>
             </div>
-            <a 
-              href="#/affiliate" 
-              className="inline-block px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg rounded-lg"
-              style={{backgroundColor: '#1B4965'}}
-            >
-              JOIN AFFILIATE PROGRAM
-            </a>
+            
+            {/* Join Now Button */}
+            <div className="mt-8 text-center">
+              <button 
+                onClick={() => window.location.hash = '#/affiliate'}
+                className="px-8 py-3 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg rounded-lg hover:opacity-90"
+                style={{backgroundColor: '#1B4965'}}
+              >
+                JOIN NOW
+              </button>
+              <p className="mt-4 text-sm font-light" style={{color: '#9DB4C0'}}>
+                After approval, you'll receive a 20-digit verification code to activate your affiliate account.
+              </p>
+            </div>
           </div>
         </div>
       </div>

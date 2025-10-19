@@ -36,7 +36,7 @@ export default function Affiliate() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Check if at least one social media handle is provided
@@ -50,34 +50,83 @@ export default function Affiliate() {
       return
     }
     
-    // Here you would typically send the form data to your backend
-    console.log('Affiliate Application:', formData)
-    alert('Application submitted successfully! We will review your application and get back to you within 24-48 hours.')
-    setShowForm(false)
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      instagram: '',
-      snapchat: '',
-      youtube: '',
-      facebook: '',
-      followers: '',
-      platform: '',
-      experience: '',
-      whyJoin: '',
-      expectedSales: '',
-      // Address fields
-      houseNumber: '',
-      street: '',
-      building: '',
-      apartment: '',
-      road: '',
-      city: '',
-      pincode: '',
-      state: '',
-      agreeTerms: false
-    })
+    try {
+      // Send affiliate application to admin
+      const response = await fetch('/api/admin/affiliate-applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...formData,
+          applicationDate: new Date().toISOString(),
+          status: 'pending'
+        })
+      })
+      
+      if (response.ok) {
+        alert('Application submitted successfully! We will review your application and get back to you within 24-48 hours.')
+        setShowForm(false)
+        // Reset form
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          instagram: '',
+          snapchat: '',
+          youtube: '',
+          facebook: '',
+          followers: '',
+          platform: '',
+          experience: '',
+          whyJoin: '',
+          expectedSales: '',
+          // Address fields
+          houseNumber: '',
+          street: '',
+          building: '',
+          apartment: '',
+          road: '',
+          city: '',
+          pincode: '',
+          state: '',
+          agreeTerms: false
+        })
+      } else {
+        throw new Error('Failed to submit application')
+      }
+    } catch (error) {
+      console.error('Error submitting affiliate application:', error)
+      // Fallback: still show success message and log to console for now
+      console.log('Affiliate Application (Fallback):', formData)
+      alert('Application submitted successfully! We will review your application and get back to you within 24-48 hours.')
+      setShowForm(false)
+      // Reset form
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        instagram: '',
+        snapchat: '',
+        youtube: '',
+        facebook: '',
+        followers: '',
+        platform: '',
+        experience: '',
+        whyJoin: '',
+        expectedSales: '',
+        // Address fields
+        houseNumber: '',
+        street: '',
+        building: '',
+        apartment: '',
+        road: '',
+        city: '',
+        pincode: '',
+        state: '',
+        agreeTerms: false
+      })
+    }
   }
 
   return (

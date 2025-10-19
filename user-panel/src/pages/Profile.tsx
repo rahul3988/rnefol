@@ -139,7 +139,9 @@ export default function Profile() {
 
   const fetchSavedCards = async () => {
     try {
-      const cardsData = await api.user.getSavedCards()
+      const response = await api.user.getSavedCards()
+      // Handle both direct array response and wrapped response
+      const cardsData = Array.isArray(response) ? response : (response.data || [])
       setSavedCards(cardsData)
     } catch (error) {
       console.error('Failed to fetch saved cards:', error)
@@ -357,6 +359,7 @@ export default function Profile() {
   const tabs = [
     { id: 'overview', label: 'Your Profile', icon: User },
     { id: 'cash', label: 'Nefol Coins', icon: CreditCard },
+    { id: 'affiliate', label: 'Affiliate Partner', icon: Heart },
     { id: 'orders', label: 'Your Orders', icon: Package },
     { id: 'cards', label: 'Saved Cards', icon: CreditCard },
     { id: 'address', label: 'Manage Address', icon: MapPin },
@@ -419,17 +422,22 @@ export default function Profile() {
                     <button
                       key={tab.id}
                       onClick={() => {
-                        setActiveTab(tab.id)
-                        // Smooth scroll to content area
-                        setTimeout(() => {
-                          const contentElement = document.getElementById('profile-content')
-                          if (contentElement) {
-                            contentElement.scrollIntoView({ 
-                              behavior: 'smooth', 
-                              block: 'start' 
-                            })
-                          }
-                        }, 100)
+                        if (tab.id === 'affiliate') {
+                          // Redirect to affiliate partner page
+                          window.location.hash = '#/affiliate-partner'
+                        } else {
+                          setActiveTab(tab.id)
+                          // Smooth scroll to content area
+                          setTimeout(() => {
+                            const contentElement = document.getElementById('profile-content')
+                            if (contentElement) {
+                              contentElement.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                              })
+                            }
+                          }, 100)
+                        }
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
                         activeTab === tab.id
@@ -578,7 +586,7 @@ export default function Profile() {
                           <div>
                             <p className="text-sm text-slate-500 dark:text-slate-400">Address</p>
                             <p className="font-medium dark:text-slate-100">
-                              {profile.address.street}, {profile.address.city}, {profile.address.state} {profile.address.zip}
+                              {profile.address ? `${profile.address.street || ''}, ${profile.address.city || ''}, ${profile.address.state || ''} ${profile.address.zip || ''}`.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '') : 'No address provided'}
                             </p>
                           </div>
                         </div>
@@ -629,6 +637,7 @@ export default function Profile() {
                   </div>
                 </div>
               )}
+
 
               {/* Orders Tab */}
               {activeTab === 'orders' && (
@@ -692,7 +701,7 @@ export default function Profile() {
                     </button>
                   </div>
                   
-                  {savedCards.length === 0 ? (
+                  {!Array.isArray(savedCards) || savedCards.length === 0 ? (
                     <div className="text-center py-12">
                       <CreditCard className="h-16 w-16 text-slate-400 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">No Saved Cards</h3>
@@ -706,7 +715,7 @@ export default function Profile() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {savedCards.map((card) => (
+                      {(Array.isArray(savedCards) ? savedCards : []).map((card) => (
                         <div key={card.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-6">
                           <div className="flex justify-between items-center">
                             <div className="flex items-center gap-4">
@@ -750,8 +759,14 @@ export default function Profile() {
                       <div>
                         <h3 className="font-semibold dark:text-slate-100">{profile.name}</h3>
                         <p className="text-slate-600 dark:text-slate-400 mt-1">
-                          {profile.address.street}<br />
-                          {profile.address.city}, {profile.address.state} {profile.address.zip}
+                          {profile.address ? (
+                            <>
+                              {profile.address.street}<br />
+                              {profile.address.city}, {profile.address.state} {profile.address.zip}
+                            </>
+                          ) : (
+                            'No address provided'
+                          )}
                         </p>
                         <p className="text-sm text-slate-500 dark:text-slate-500 mt-2">{profile.phone}</p>
                       </div>

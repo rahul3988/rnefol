@@ -11,7 +11,11 @@ class UserSocketService {
 
     this.userId = userId || this.getUserIdFromStorage()
 
-    this.socket = io(`http://${window.location.hostname}:4000`, {
+    // Use same hostname as frontend for socket connection
+    const socketUrl = import.meta.env.DEV 
+      ? `http://${window.location.hostname}:4000` 
+      : window.location.origin
+    this.socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: false,

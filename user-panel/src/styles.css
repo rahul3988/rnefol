@@ -4,6 +4,40 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Sky Rocket Animation for Ingredients Page */
+@keyframes skyRocket {
+  0% {
+    opacity: 0;
+    transform: translateY(100px) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(50px) scale(0.8);
+  }
+  50% {
+    transform: translateY(-20px) scale(1.1);
+  }
+  80% {
+    transform: translateY(-50px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-100px) scale(0.8);
+  }
+}
+
+/* Fade In Scale Animation for Ingredient Name */
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* ===== REVOLUTIONARY DESIGN SYSTEM ===== */
 
 /* Custom Properties for Advanced Design */

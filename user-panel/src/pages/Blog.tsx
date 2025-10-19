@@ -30,7 +30,17 @@ export default function Blog() {
       const response = await fetch(`${apiBase}/api/blog/posts`)
       if (response.ok) {
         const data = await response.json()
-        setPosts(data.filter((post: BlogPost) => post.status === 'approved'))
+        // Convert relative image paths to full URLs
+        const postsWithFullImageUrls = data.filter((post: BlogPost) => post.status === 'approved').map((post: BlogPost) => ({
+          ...post,
+          images: post.images.map((imagePath: string) => {
+            if (imagePath.startsWith('/uploads/')) {
+              return `${apiBase}${imagePath}`
+            }
+            return imagePath
+          })
+        }))
+        setPosts(postsWithFullImageUrls)
       } else {
         setError('Failed to load blog posts')
       }
@@ -145,15 +155,6 @@ export default function Blog() {
           <p className="text-lg font-light max-w-2xl mx-auto mb-6" style={{color: '#9DB4C0'}}>
             Discover the latest insights on natural skincare, beauty tips, and the science behind our ingredients.
           </p>
-          
-          {/* Submit Blog Request Button */}
-          <button
-            onClick={() => setShowRequestForm(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Submit Your Blog Post
-          </button>
         </div>
 
         {loading ? (
@@ -282,6 +283,23 @@ export default function Blog() {
                 SUBSCRIBE
               </button>
             </form>
+          </div>
+        </div>
+
+        {/* Submit Blog Request Button */}
+        <div className="mt-16 text-center">
+          <div className="bg-white rounded-lg shadow-sm p-8">
+            <h3 className="text-2xl font-serif mb-4" style={{color: '#1B4965'}}>Share Your Story</h3>
+            <p className="text-lg font-light mb-6" style={{color: '#9DB4C0'}}>
+              Have a skincare tip, beauty secret, or personal journey to share? Submit your blog post and inspire our community.
+            </p>
+            <button
+              onClick={() => setShowRequestForm(true)}
+              className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm tracking-wide uppercase shadow-lg"
+            >
+              <Plus className="w-5 h-5" />
+              Submit Your Blog Post
+            </button>
           </div>
         </div>
       </div>

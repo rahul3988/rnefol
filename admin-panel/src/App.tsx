@@ -12,6 +12,10 @@ import {
 import Shipments from './pages/sales/Shipments'
 import LoginPage from './pages/Login'
 import CMS from './pages/CMS'
+import CMSManagement from './pages/cms/CMSManagement'
+import BlogRequestManagement from './pages/blog/BlogRequestManagement'
+import AffiliateManagement from './pages/AffiliateManagement'
+import AffiliateRequests from './pages/AffiliateRequests'
 
 // Import all the new components
 import LoyaltyProgram from './components/LoyaltyProgram'
@@ -153,7 +157,10 @@ export default function App() {
             <Route path="api-manager" element={<APICodeManager />} />
             <Route path="payment-options" element={<PaymentOptions />} />
             <Route path="video-manager" element={<VideoManager />} />
-            <Route path="cms" element={<CMS />} />
+            <Route path="cms" element={<CMSManagement />} />
+            <Route path="blog-requests" element={<BlogRequestManagement />} />
+            <Route path="affiliate-program" element={<AffiliateManagement />} />
+            <Route path="affiliate-requests" element={<AffiliateRequests />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

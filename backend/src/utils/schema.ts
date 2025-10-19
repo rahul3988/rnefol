@@ -238,6 +238,112 @@ export async function ensureSchema(pool: Pool) {
     
     create index if not exists idx_cms_sections_page_id on cms_sections(page_id);
     create index if not exists idx_cms_sections_order on cms_sections(order_index);
+    
+    -- Affiliate Program Tables
+    create table if not exists affiliate_applications (
+      id serial primary key,
+      name text not null,
+      email text not null,
+      phone text not null,
+      instagram text,
+      snapchat text,
+      youtube text,
+      facebook text,
+      followers text,
+      platform text,
+      experience text,
+      why_join text,
+      expected_sales text,
+      house_number text not null,
+      street text not null,
+      building text,
+      apartment text,
+      road text not null,
+      city text not null,
+      pincode text not null,
+      state text not null,
+      agree_terms boolean not null,
+      status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+      verification_code text,
+      admin_notes text,
+      rejection_reason text,
+      application_date timestamptz default now(),
+      approved_at timestamptz,
+      rejected_at timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists affiliate_partners (
+      id serial primary key,
+      application_id integer references affiliate_applications(id) on delete cascade,
+      user_id integer references users(id) on delete set null,
+      name text not null,
+      email text not null,
+      phone text not null,
+      verification_code text unique not null,
+      status text not null default 'unverified' check (status in ('unverified', 'active', 'suspended', 'terminated')),
+      commission_rate numeric(5,2) default 15.0,
+      total_earnings numeric(12,2) default 0,
+      total_referrals integer default 0,
+      pending_earnings numeric(12,2) default 0,
+      last_payment timestamptz,
+      verified_at timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists affiliate_referrals (
+      id serial primary key,
+      affiliate_id integer not null references affiliate_partners(id) on delete cascade,
+      order_id integer references orders(id) on delete set null,
+      customer_email text not null,
+      customer_name text not null,
+      order_total numeric(12,2) not null,
+      commission_earned numeric(12,2) not null,
+      commission_rate numeric(5,2) not null,
+      status text not null default 'pending' check (status in ('pending', 'confirmed', 'paid')),
+      referral_date timestamptz default now(),
+      confirmed_at timestamptz,
+      paid_at timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists affiliate_payouts (
+      id serial primary key,
+      affiliate_id integer not null references affiliate_partners(id) on delete cascade,
+      amount numeric(12,2) not null,
+      status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'failed')),
+      payment_method text,
+      payment_reference text,
+      payout_period_start timestamptz not null,
+      payout_period_end timestamptz not null,
+      processed_at timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    -- Add affiliate_id to orders table
+    alter table orders add column if not exists affiliate_id integer references affiliate_partners(id) on delete set null;
+    
+    -- Create indexes for affiliate tables
+    create index if not exists idx_affiliate_applications_email on affiliate_applications(email);
+    create index if not exists idx_affiliate_applications_status on affiliate_applications(status);
+    create index if not exists idx_affiliate_applications_date on affiliate_applications(application_date);
+    
+    create index if not exists idx_affiliate_partners_user_id on affiliate_partners(user_id);
+    create index if not exists idx_affiliate_partners_status on affiliate_partners(status);
+    create index if not exists idx_affiliate_partners_code on affiliate_partners(verification_code);
+    
+    create index if not exists idx_affiliate_referrals_affiliate_id on affiliate_referrals(affiliate_id);
+    create index if not exists idx_affiliate_referrals_status on affiliate_referrals(status);
+    create index if not exists idx_affiliate_referrals_date on affiliate_referrals(referral_date);
+    
+    create index if not exists idx_affiliate_payouts_affiliate_id on affiliate_payouts(affiliate_id);
+    create index if not exists idx_affiliate_payouts_status on affiliate_payouts(status);
+    
+    create index if not exists idx_orders_affiliate_id on orders(affiliate_id);
   `)
   
   // Add unique constraint on products slug

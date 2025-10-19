@@ -3,6 +3,7 @@ import SplashScreen from './components/SplashScreen'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
 import CartIcon from './components/CartIcon'
+import ProfileAvatar from './components/ProfileAvatar'
 import { useCart } from './contexts/CartContext'
 import { useTheme, ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -224,7 +225,16 @@ function AppContent() {
                   className="neu w-12 h-12 flex items-center justify-center hover:scale-110 transition-all duration-300" 
                   aria-label="Account"
                 >
-                  <span className="text-lg">👤</span>
+                  {isAuthenticated && user ? (
+                    <ProfileAvatar 
+                      profilePhoto={user.profile_photo}
+                      name={user.name}
+                      size="sm"
+                      className="w-8 h-8"
+                    />
+                  ) : (
+                    <span className="text-lg">👤</span>
+                  )}
                 </button>
                 
                 <button className="neu w-12 h-12 flex items-center justify-center hover:scale-110 transition-all duration-300 md:hidden" aria-label="Menu">
@@ -504,6 +514,9 @@ import Contact from './pages/Contact'
 import ProductPage from './pages/Product'
 import CategoryPage from './pages/Category'
 import Affiliate from './pages/Affiliate'
+import AffiliatePartner from './pages/AffiliatePartner'
+import ReferralHistory from './pages/ReferralHistory'
+import Reports from './pages/Reports'
 import Checkout from './pages/Checkout'
 import Confirmation from './pages/Confirmation'
 
@@ -549,6 +562,9 @@ function RouterView({ addToCart, addToWishlist }: RouterViewProps) {
     case '/contact': return <Contact />
     case '/checkout': return <Checkout />
     case '/affiliate': return <Affiliate />
+    case '/affiliate-partner': return <AffiliatePartner />
+    case '/referral-history': return <ReferralHistory />
+    case '/reports': return <Reports />
     case '/profile': return <Profile />
     case '/login': return <LoginPage />
     case '/about': return <AboutUs />
