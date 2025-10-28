@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Bell, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Smartphone, Settings } from 'lucide-react'
+import apiService from '../services/api'
 
 interface PushNotification {
   id: string
@@ -57,154 +58,10 @@ interface PushSettings {
 }
 
 export default function WebPushNotifications() {
-  const [notifications] = useState<PushNotification[]>([
-    {
-      id: '1',
-      title: 'Flash Sale Alert! 🔥',
-      message: 'Get 30% off on all skincare products. Limited time offer. Shop now!',
-      status: 'sent',
-      type: 'promotional',
-      audience: 'All Subscribers',
-      sentDate: '2024-01-15',
-      recipients: 3500,
-      deliveryRate: 95.2,
-      openRate: 42.8,
-      clickRate: 8.5,
-      conversionRate: 5.2,
-      revenue: 12000,
-      imageUrl: '/IMAGES/sale-banner.jpg',
-      actionUrl: '/shop?discount=30'
-    },
-    {
-      id: '2',
-      title: 'Order Update',
-      message: 'Your order #ORD-2024-001 has been shipped. Track your package now.',
-      status: 'sent',
-      type: 'transactional',
-      audience: 'Order Customers',
-      sentDate: '2024-01-20',
-      recipients: 150,
-      deliveryRate: 98.5,
-      openRate: 78.2,
-      clickRate: 45.3,
-      conversionRate: 0,
-      revenue: 0,
-      actionUrl: '/track-order'
-    },
-    {
-      id: '3',
-      title: 'Cart Reminder',
-      message: 'Don\'t forget your skincare essentials! Complete your order and get free shipping.',
-      status: 'sent',
-      type: 'abandoned_cart',
-      audience: 'Cart Abandoners',
-      sentDate: '2024-01-18',
-      recipients: 450,
-      deliveryRate: 96.8,
-      openRate: 35.6,
-      clickRate: 12.8,
-      conversionRate: 8.9,
-      revenue: 3600,
-      actionUrl: '/cart'
-    },
-    {
-      id: '4',
-      title: 'New Product Launch',
-      message: 'Introducing our revolutionary anti-aging serum. Be the first to try it!',
-      status: 'scheduled',
-      type: 'announcement',
-      audience: 'VIP Customers',
-      scheduledDate: '2024-02-15',
-      recipients: 800,
-      deliveryRate: 0,
-      openRate: 0,
-      clickRate: 0,
-      conversionRate: 0,
-      revenue: 0,
-      imageUrl: '/IMAGES/new-product.jpg',
-      actionUrl: '/product/anti-aging-serum'
-    }
-  ])
-
-  const [templates] = useState<PushTemplate[]>([
-    {
-      id: '1',
-      name: 'Sale Announcement',
-      category: 'Promotional',
-      title: 'Sale Alert! 🔥',
-      message: 'Get [discount]% off on [category]. Limited time offer. Shop now!',
-      isCustom: false
-    },
-    {
-      id: '2',
-      name: 'Order Update',
-      category: 'Transactional',
-      title: 'Order Update',
-      message: 'Your order #[order_id] status: [status]. Track your package now.',
-      isCustom: false
-    },
-    {
-      id: '3',
-      name: 'Product Reminder',
-      category: 'Reminder',
-      title: 'Don\'t forget!',
-      message: 'Your [product] is waiting. Complete your order: [link]',
-      isCustom: false
-    },
-    {
-      id: '4',
-      name: 'New Product',
-      category: 'Announcement',
-      title: 'New Product Launch!',
-      message: 'Introducing [product_name]. Be the first to try it!',
-      isCustom: false
-    }
-  ])
-
-  const [automations] = useState<PushAutomation[]>([
-    {
-      id: '1',
-      name: 'Order Confirmation',
-      trigger: 'Order Placed',
-      condition: 'All orders',
-      action: 'Send confirmation notification',
-      isActive: true,
-      notificationsSent: 150,
-      conversionRate: 0
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment',
-      trigger: 'Cart Abandoned',
-      condition: 'Cart value > ₹500',
-      action: 'Send reminder notification after 1 hour',
-      isActive: true,
-      notificationsSent: 450,
-      conversionRate: 8.9
-    },
-    {
-      id: '3',
-      name: 'Product Back in Stock',
-      trigger: 'Product Restocked',
-      condition: 'Customer was interested',
-      action: 'Send back in stock notification',
-      isActive: true,
-      notificationsSent: 120,
-      conversionRate: 15.2
-    },
-    {
-      id: '4',
-      name: 'Price Drop Alert',
-      trigger: 'Price Decreased',
-      condition: 'Customer added to wishlist',
-      action: 'Send price drop notification',
-      isActive: false,
-      notificationsSent: 0,
-      conversionRate: 0
-    }
-  ])
-
-  const [settings] = useState<PushSettings>({
+  const [notifications, setNotifications] = useState<PushNotification[]>([])
+  const [templates, setTemplates] = useState<PushTemplate[]>([])
+  const [automations, setAutomations] = useState<PushAutomation[]>([])
+  const [settings, setSettings] = useState<PushSettings>({
     isEnabled: true,
     allowPromotional: true,
     allowTransactional: true,
@@ -219,16 +76,42 @@ export default function WebPushNotifications() {
       maxPerDay: 3
     }
   })
-
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [showCreateNotification, setShowCreateNotification] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [selectedNotification, setSelectedNotification] = useState<PushNotification | null>(null)
 
+  useEffect(() => {
+    loadPushData()
+  }, [])
+
+  const loadPushData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [notificationsData, templatesData, automationsData] = await Promise.all([
+        apiService.getPushNotifications().catch(() => [] as PushNotification[]),
+        apiService.getPushTemplates().catch(() => [] as PushTemplate[]),
+        apiService.getPushAutomations().catch(() => [] as PushAutomation[])
+      ])
+      
+      setNotifications(Array.isArray(notificationsData) ? notificationsData : [])
+      setTemplates(Array.isArray(templatesData) ? templatesData : [])
+      setAutomations(Array.isArray(automationsData) ? automationsData : [])
+    } catch (err) {
+      console.error('Failed to load push notification data:', err)
+      setError('Failed to load push notification data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const totalStats = {
     totalNotifications: notifications.length,
-    totalRecipients: notifications.reduce((sum, notification) => sum + notification.recipients, 0),
-    averageDeliveryRate: notifications.reduce((sum, notification) => sum + notification.deliveryRate, 0) / notifications.length,
-    totalRevenue: notifications.reduce((sum, notification) => sum + notification.revenue, 0)
+    totalRecipients: notifications.length > 0 ? notifications.reduce((sum, notification) => sum + notification.recipients, 0) : 0,
+    averageDeliveryRate: notifications.length > 0 ? notifications.reduce((sum, notification) => sum + notification.deliveryRate, 0) / notifications.length : 0,
+    totalRevenue: notifications.length > 0 ? notifications.reduce((sum, notification) => sum + notification.revenue, 0) : 0
   }
 
   const getStatusColor = (status: string) => {
@@ -252,6 +135,40 @@ export default function WebPushNotifications() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading push notification data...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadPushData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
       {/* Header */}
@@ -265,6 +182,13 @@ export default function WebPushNotifications() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={loadPushData}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
           <button
             onClick={() => setShowSettings(true)}
             className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2"

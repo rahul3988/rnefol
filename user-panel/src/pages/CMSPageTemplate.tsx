@@ -52,7 +52,7 @@ export default function CMSPageTemplate({
       <title>{content.page.page_title || 'Nefol'}</title>
       
       {/* Real-time connection indicator (optional, can be hidden) */}
-      {process.env.NODE_ENV === 'development' && (
+      {import.meta.env.DEV && (
         <div className="fixed bottom-4 right-4 z-50 bg-white rounded-full shadow-lg p-2 border border-gray-200">
           <div className="flex items-center gap-2 px-3 py-1">
             {isConnected ? (
@@ -147,7 +147,7 @@ function DefaultError({ pageName }: { pageName: string }) {
         </p>
         <div className="space-y-2">
           <a 
-            href="#/" 
+            href="#/user/" 
             className="inline-block px-6 py-3 text-white font-medium rounded-lg transition-all duration-300"
             style={{backgroundColor: '#4B97C9'}}
           >

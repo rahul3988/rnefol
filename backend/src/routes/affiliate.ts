@@ -36,6 +36,8 @@ export async function submitAffiliateApplication(pool: Pool, req: Request, res: 
       agreeTerms
     } = req.body
 
+    const userId = req.userId // Get authenticated user ID
+
     // Validate required fields
     if (!name || !email || !phone || !agreeTerms) {
       return sendError(res, 400, 'Missing required fields')
@@ -47,14 +49,41 @@ export async function submitAffiliateApplication(pool: Pool, req: Request, res: 
       return sendError(res, 400, 'At least one social media profile is required')
     }
 
-    // Check if application already exists
-    const existingApp = await pool.query(
-      'SELECT id FROM affiliate_applications WHERE email = $1',
-      [email]
-    )
+    // Check if application already exists for this user OR this email
+    let existingApp = { rows: [] as any[] };
+    if (userId) {
+      // First, get the user's email to check
+      const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [userId])
+      if (userResult.rows.length > 0) {
+        const userEmail = userResult.rows[0].email
+        
+        // Check if there's an existing application for this user's email
+        existingApp = await pool.query(
+          'SELECT id, status FROM affiliate_applications WHERE email = $1',
+          [userEmail]
+        )
+        
+        // Also check if the form email is different and already used
+        if (existingApp.rows.length === 0 && email !== userEmail) {
+          existingApp = await pool.query(
+            'SELECT id, status FROM affiliate_applications WHERE email = $1',
+            [email]
+          )
+        }
+      }
+    } else {
+      // If no userId, just check by email
+      existingApp = await pool.query(
+        'SELECT id, status FROM affiliate_applications WHERE email = $1',
+        [email]
+      )
+    }
 
-    if (existingApp.rows.length > 0) {
-      return sendError(res, 409, 'Application already exists for this email')
+    if (existingApp && existingApp.rows.length > 0) {
+      const existingStatus = existingApp.rows[0].status
+      if (existingStatus === 'pending' || existingStatus === 'approved' || existingStatus === 'rejected') {
+        return sendError(res, 409, `You already have an application with ${existingStatus} status. Please wait for approval or contact support.`)
+      }
     }
 
     // Create application
@@ -174,7 +203,7 @@ export async function approveAffiliateApplication(pool: Pool, req: Request, res:
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [
       id, application.name, application.email, application.phone, verificationCode,
-      'unverified', 15.0, 0, 0, 0, new Date()
+      'unverified', 10.0, 0, 0, 0, new Date()
     ])
 
     sendSuccess(res, {
@@ -249,7 +278,7 @@ export async function verifyAffiliateCode(pool: Pool, req: Request, res: Respons
       // Check if this user is already linked to this affiliate
       if (affiliate.user_id === userId) {
         // User is already verified and linked
-        const affiliateLink = `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}?ref=${affiliate.id}`
+        const affiliateLink = `${process.env.CLIENT_ORIGIN || 'http://192.168.1.66:5173'}?ref=${affiliate.id}`
         return sendSuccess(res, {
           message: 'Account already verified',
           affiliateLink,
@@ -269,7 +298,7 @@ export async function verifyAffiliateCode(pool: Pool, req: Request, res: Respons
     `, [new Date(), userId, affiliate.id])
 
     // Generate affiliate link
-    const affiliateLink = `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}?ref=${affiliate.id}`
+    const affiliateLink = `${process.env.CLIENT_ORIGIN || 'http://192.168.1.66:5173'}?ref=${affiliate.id}`
 
     sendSuccess(res, {
       message: 'Account verified successfully',
@@ -396,8 +425,12 @@ export async function getAffiliateDashboard(pool: Pool, req: Request, res: Respo
       LIMIT 10
     `, [affiliate.id])
 
+    // Generate referral link for verified affiliates
+    const referralLink = `${process.env.CLIENT_ORIGIN || 'http://192.168.1.66:5173'}?ref=${affiliate.id}`
+
     sendSuccess(res, {
       ...affiliate,
+      referral_link: referralLink,
       total_referrals: parseInt(stats.total_referrals || 0),
       completed_referrals: parseInt(stats.completed_referrals || 0),
       total_earnings: parseFloat(stats.total_earnings || 0),
@@ -462,6 +495,30 @@ export async function getAffiliateReferrals(pool: Pool, req: Request, res: Respo
   }
 }
 
+// Get affiliate partners (admin only)
+export async function getAffiliatePartners(pool: Pool, req: Request, res: Response) {
+  try {
+    const { applicationId } = req.query
+
+    let query = 'SELECT * FROM affiliate_partners'
+    let params: any[] = []
+    let paramCount = 0
+
+    if (applicationId) {
+      query += ` WHERE application_id = $${++paramCount}`
+      params.push(applicationId)
+    }
+
+    query += ' ORDER BY created_at DESC'
+
+    const { rows } = await pool.query(query, params)
+
+    sendSuccess(res, { partners: rows })
+  } catch (err) {
+    sendError(res, 500, 'Failed to fetch affiliate partners', err)
+  }
+}
+
 // Generate new verification code (admin only)
 export async function regenerateVerificationCode(pool: Pool, req: Request, res: Response) {
   try {
@@ -485,5 +542,207 @@ export async function regenerateVerificationCode(pool: Pool, req: Request, res: 
     })
   } catch (err) {
     sendError(res, 500, 'Failed to regenerate code', err)
+  }
+}
+
+// Get affiliate commission settings (admin only)
+export async function getAffiliateCommissionSettings(pool: Pool, req: Request, res: Response) {
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM affiliate_commission_settings 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `)
+
+    if (rows.length === 0) {
+      // Return default settings if none exist
+      return sendSuccess(res, {
+        commission_percentage: 10.0,
+        is_active: true,
+        created_at: new Date(),
+        updated_at: new Date()
+      })
+    }
+
+    sendSuccess(res, rows[0])
+  } catch (err) {
+    sendError(res, 500, 'Failed to fetch commission settings', err)
+  }
+}
+
+// Update affiliate commission settings (admin only)
+export async function updateAffiliateCommissionSettings(pool: Pool, req: Request, res: Response) {
+  try {
+    const { commission_percentage, is_active } = req.body
+
+    if (commission_percentage === undefined || commission_percentage < 0 || commission_percentage > 100) {
+      return sendError(res, 400, 'Commission percentage must be between 0 and 100')
+    }
+
+    // Check if settings exist
+    const existingSettings = await pool.query(`
+      SELECT id FROM affiliate_commission_settings 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `)
+
+    let result
+    if (existingSettings.rows.length > 0) {
+      // Update existing settings
+      result = await pool.query(`
+        UPDATE affiliate_commission_settings 
+        SET commission_percentage = $1, is_active = $2, updated_at = $3
+        WHERE id = $4
+        RETURNING *
+      `, [commission_percentage, is_active !== false, new Date(), existingSettings.rows[0].id])
+    } else {
+      // Create new settings
+      result = await pool.query(`
+        INSERT INTO affiliate_commission_settings (commission_percentage, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+      `, [commission_percentage, is_active !== false, new Date(), new Date()])
+    }
+
+    // Emit socket event for real-time updates
+    if (req.io) {
+      req.io.to('all-users').emit('commission_settings_updated', result.rows[0])
+      req.io.to('admin-panel').emit('update', { 
+        type: 'commission-settings-updated', 
+        data: result.rows[0] 
+      })
+    }
+
+    sendSuccess(res, {
+      ...result.rows[0],
+      message: 'Commission settings updated successfully'
+    })
+  } catch (err) {
+    sendError(res, 500, 'Failed to update commission settings', err)
+  }
+}
+
+// Get affiliate commission settings for users
+export async function getAffiliateCommissionForUsers(pool: Pool, req: Request, res: Response) {
+  try {
+    const { rows } = await pool.query(`
+      SELECT commission_percentage, is_active FROM affiliate_commission_settings 
+      WHERE is_active = true
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `)
+
+    if (rows.length === 0) {
+      // Return default commission if no active settings
+      return sendSuccess(res, {
+        commission_percentage: 10.0,
+        is_active: true
+      })
+    }
+
+    sendSuccess(res, rows[0])
+  } catch (err) {
+    sendError(res, 500, 'Failed to fetch commission settings', err)
+  }
+}
+
+// Get marketing materials for affiliates
+export async function getAffiliateMarketingMaterials(pool: Pool, req: Request, res: Response) {
+  try {
+    const materials = {
+      socialMediaPosts: [
+        {
+          id: 'social-1',
+          name: 'Product Showcase Post',
+          description: 'Instagram/Facebook post showcasing Nefol products',
+          files: [
+            { name: 'Instagram Post Template', url: '/IMAGES/BANNER (1).jpg', type: 'image' },
+            { name: 'Facebook Post Template', url: '/IMAGES/BANNER (2).jpg', type: 'image' },
+            { name: 'Story Template', url: '/IMAGES/BANNER (3).jpg', type: 'image' }
+          ]
+        },
+        {
+          id: 'social-2',
+          name: 'Before/After Posts',
+          description: 'Before and after transformation posts',
+          files: [
+            { name: 'Face Care Results', url: '/IMAGES/Face Serum/1 Nefol Face Serum_1.png', type: 'image' },
+            { name: 'Hair Care Results', url: '/IMAGES/Hair Oil/1.jpg', type: 'image' }
+          ]
+        }
+      ],
+      productImages: [
+        {
+          id: 'products-1',
+          name: 'Face Care Products',
+          description: 'High-quality images of face care products',
+          files: [
+            { name: 'Face Serum Collection', url: '/IMAGES/Face Serum/', type: 'folder' },
+            { name: 'Face Cleanser Collection', url: '/IMAGES/FaceCleanser/', type: 'folder' },
+            { name: 'Face Scrub Collection', url: '/IMAGES/Furbish Scrub/', type: 'folder' },
+            { name: 'Hydrating Moisturizer', url: '/IMAGES/Hydrating moisturizer/', type: 'folder' }
+          ]
+        },
+        {
+          id: 'products-2',
+          name: 'Hair Care Products',
+          description: 'High-quality images of hair care products',
+          files: [
+            { name: 'Hair Oil Collection', url: '/IMAGES/Hair Oil/', type: 'folder' },
+            { name: 'Hair Shampoo Collection', url: '/IMAGES/Hair Lather Shampoo/', type: 'folder' },
+            { name: 'Hair Mask Collection', url: '/IMAGES/Hair Mask/', type: 'folder' }
+          ]
+        },
+        {
+          id: 'products-3',
+          name: 'Combo Products',
+          description: 'Product combo images',
+          files: [
+            { name: 'Acne Control Duo', url: '/IMAGES/acne control duo/', type: 'folder' },
+            { name: 'Deep Clean Combo', url: '/IMAGES/deep clean combo/', type: 'folder' },
+            { name: 'Glow Care Combo', url: '/IMAGES/glow care combo/', type: 'folder' },
+            { name: 'Hydrating Duo', url: '/IMAGES/hydrating duo/', type: 'folder' },
+            { name: 'Radiance Routine', url: '/IMAGES/radiance routine/', type: 'folder' },
+            { name: 'Hair Care Combo', url: '/IMAGES/nefol hair care combo/', type: 'folder' }
+          ]
+        }
+      ],
+      emailTemplates: [
+        {
+          id: 'email-1',
+          name: 'Product Introduction Email',
+          description: 'Email template for introducing Nefol products',
+          files: [
+            { name: 'Product Introduction Template', url: '/IMAGES/DOCU/USP of Nefol Product.docx', type: 'document' },
+            { name: 'About Us Content', url: '/IMAGES/DOCU/About Us Nefol.docx', type: 'document' }
+          ]
+        },
+        {
+          id: 'email-2',
+          name: 'Educational Content',
+          description: 'Educational content about skincare and haircare',
+          files: [
+            { name: 'Blue Tea Benefits', url: '/IMAGES/DOCU/Blue tea benefits.docx', type: 'document' },
+            { name: 'FAQ Document', url: '/IMAGES/DOCU/FAQ.docx', type: 'document' }
+          ]
+        }
+      ],
+      videos: [
+        {
+          id: 'video-1',
+          name: 'Product Demo Videos',
+          description: 'Product demonstration videos',
+          files: [
+            { name: 'Logo Animation', url: '/IMAGES/SS LOGO.mp4', type: 'video' },
+            { name: 'Logo Portrait', url: '/IMAGES/SS LOGO PORTRAIT.mp4', type: 'video' },
+            { name: 'Product Demo', url: '/IMAGES/Open Pores, Acne Marks & Blackheads Treatment F.mp4', type: 'video' }
+          ]
+        }
+      ]
+    }
+
+    sendSuccess(res, materials)
+  } catch (err) {
+    sendError(res, 500, 'Failed to fetch marketing materials', err)
   }
 }

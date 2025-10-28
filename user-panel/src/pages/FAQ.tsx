@@ -68,17 +68,17 @@ export default function FAQ() {
   ]
 
   return (
-    <main className="py-10 dark:bg-slate-900 min-h-screen">
+    <main className="py-10 min-h-screen" style={{backgroundColor: '#F4F9F9'}}>
       <div className="mx-auto max-w-4xl px-4">
         {/* Header */}
         <div className="text-center mb-16">
-          <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-6">
-            <HelpCircle className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+          <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{backgroundColor: '#D0E8F2'}}>
+            <HelpCircle className="w-10 h-10" style={{color: '#4B97C9'}} />
           </div>
-          <h1 className="text-5xl font-bold text-slate-900 dark:text-slate-100 mb-6">
+          <h1 className="text-5xl font-bold mb-6" style={{color: '#1B4965'}}>
             Frequently Asked Questions
           </h1>
-          <p className="text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto">
+          <p className="text-xl max-w-3xl mx-auto" style={{color: '#9DB4C0'}}>
             Find answers to common questions about Nefol products, usage, and policies.
           </p>
         </div>
@@ -88,26 +88,27 @@ export default function FAQ() {
           {faqs.map((faq, index) => (
             <div 
               key={index}
-              className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden"
+              className="bg-white rounded-xl shadow-lg overflow-hidden"
             >
               <button
                 onClick={() => toggleItem(index)}
-                className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                className="w-full px-6 py-4 text-left flex items-center justify-between transition-colors"
+                style={{backgroundColor: openItems.includes(index) ? '#D0E8F2' : 'white'}}
               >
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 pr-4">
+                <h3 className="text-lg font-semibold pr-4" style={{color: '#1B4965'}}>
                   {faq.question}
                 </h3>
                 {openItems.includes(index) ? (
-                  <ChevronUp className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                  <ChevronUp className="w-5 h-5 flex-shrink-0" style={{color: '#4B97C9'}} />
                 ) : (
-                  <ChevronDown className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                  <ChevronDown className="w-5 h-5 flex-shrink-0" style={{color: '#9DB4C0'}} />
                 )}
               </button>
               
               {openItems.includes(index) && (
                 <div className="px-6 pb-4">
-                  <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                    <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                  <div className="border-t pt-4" style={{borderColor: '#D0E8F2'}}>
+                    <p className="leading-relaxed" style={{color: '#9DB4C0'}}>
                       {faq.answer}
                     </p>
                   </div>
@@ -118,23 +119,25 @@ export default function FAQ() {
         </div>
 
         {/* Contact Support */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800 rounded-2xl p-8 text-center">
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+        <div className="rounded-2xl p-8 text-center" style={{background: 'linear-gradient(135deg, #D0E8F2 0%, #F4F9F9 100%)'}}>
+          <h2 className="text-2xl font-bold mb-4" style={{color: '#1B4965'}}>
             Still Have Questions?
           </h2>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">
+          <p className="mb-6" style={{color: '#9DB4C0'}}>
             Can't find the answer you're looking for? Our customer support team is here to help!
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/contact" 
-              className="inline-block bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+              href="#/user/contact" 
+              className="inline-block text-white px-8 py-3 rounded-lg font-semibold transition-colors shadow-lg"
+              style={{backgroundColor: '#1B4965'}}
             >
               Contact Support
             </a>
             <a 
               href="tel:+918887847213" 
-              className="inline-block border-2 border-blue-600 text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-blue-600 hover:text-white transition-colors"
+              className="inline-block px-8 py-3 rounded-lg font-semibold transition-colors"
+              style={{borderColor: '#4B97C9', borderWidth: '2px', color: '#4B97C9'}}
             >
               Call Us: +91-8887-847213
             </a>

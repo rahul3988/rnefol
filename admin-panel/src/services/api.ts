@@ -1,5 +1,5 @@
 // API Service for connecting frontend with backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:4000`
+const API_BASE_URL = import.meta.env.VITE_API_URL || `http://192.168.1.66:4000`
 
 class ApiService {
   private baseURL: string
@@ -11,9 +11,13 @@ class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseURL}${endpoint}`
     
+    // Get auth token from localStorage
+    const token = localStorage.getItem('auth_token')
+    
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
         ...options.headers,
       },
       ...options,
@@ -69,26 +73,115 @@ class ApiService {
     })
   }
 
+  async getCashbackWallet() {
+    return this.request('/api/cashback/wallet')
+  }
+
+  async getCashbackOffers() {
+    return this.request('/api/cashback/offers')
+  }
+
+  async getCashbackTransactions() {
+    return this.request('/api/cashback/transactions')
+  }
+
+  async redeemCashback(data: any) {
+    return this.request('/api/cashback/redeem', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
   // Email Marketing APIs
   async getEmailCampaigns() {
-    return this.request('/api/email-marketing')
+    return this.request('/api/email-marketing/campaigns')
   }
 
   async createEmailCampaign(data: any) {
-    return this.request('/api/email-marketing', {
+    return this.request('/api/email-marketing/campaigns', {
       method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateEmailCampaign(id: string, data: any) {
+    return this.request(`/api/email-marketing/campaigns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteEmailCampaign(id: string) {
+    return this.request(`/api/email-marketing/campaigns/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getEmailTemplates() {
+    return this.request('/api/email-marketing/templates')
+  }
+
+  async getEmailAutomations() {
+    return this.request('/api/email-marketing/automations')
+  }
+
+  async createEmailAutomation(data: any) {
+    return this.request('/api/email-marketing/automations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateEmailAutomation(id: string, data: any) {
+    return this.request(`/api/email-marketing/automations/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     })
   }
 
   // SMS Marketing APIs
   async getSMSCampaigns() {
-    return this.request('/api/sms-marketing')
+    return this.request('/api/sms-marketing/campaigns')
   }
 
   async createSMSCampaign(data: any) {
-    return this.request('/api/sms-marketing', {
+    return this.request('/api/sms-marketing/campaigns', {
       method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateSMSCampaign(id: string, data: any) {
+    return this.request(`/api/sms-marketing/campaigns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteSMSCampaign(id: string) {
+    return this.request(`/api/sms-marketing/campaigns/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getSMSTemplates() {
+    return this.request('/api/sms-marketing/templates')
+  }
+
+  async getSMSAutomations() {
+    return this.request('/api/sms-marketing/automations')
+  }
+
+  async createSMSAutomation(data: any) {
+    return this.request('/api/sms-marketing/automations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateSMSAutomation(id: string, data: any) {
+    return this.request(`/api/sms-marketing/automations/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     })
   }
@@ -105,28 +198,38 @@ class ApiService {
     })
   }
 
-  // WhatsApp Chat APIs
-  async getWhatsAppChats() {
-    return this.request('/api/whatsapp-chat')
+  async getPushTemplates() {
+    return this.request('/api/push-notifications/templates')
   }
 
-  async createWhatsAppChat(data: any) {
-    return this.request('/api/whatsapp-chat', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+  async getPushAutomations() {
+    return this.request('/api/push-notifications/automations')
+  }
+
+  // WhatsApp Chat APIs
+  async getWhatsAppChats() {
+    return this.request('/api/whatsapp-chat/sessions')
+  }
+
+  async getWhatsAppTemplates() {
+    return this.request('/api/whatsapp-chat/templates')
+  }
+
+  async getWhatsAppAutomations() {
+    return this.request('/api/whatsapp-chat/automations')
   }
 
   // Live Chat APIs
-  async getLiveChats() {
-    return this.request('/api/live-chat')
+  async getLiveChatSessions() {
+    return this.request('/api/live-chat/sessions')
   }
 
-  async createLiveChat(data: any) {
-    return this.request('/api/live-chat', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+  async getLiveChatAgents() {
+    return this.request('/api/live-chat/agents')
+  }
+
+  async getLiveChatWidgets() {
+    return this.request('/api/live-chat/widgets')
   }
 
   // Advanced Analytics APIs
@@ -146,30 +249,6 @@ class ApiService {
     })
   }
 
-  // Workflow Automation APIs
-  async getWorkflows() {
-    return this.request('/api/workflow-automation')
-  }
-
-  async createWorkflow(data: any) {
-    return this.request('/api/workflow-automation', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-  }
-
-  // Customer Segmentation APIs
-  async getCustomerSegments() {
-    return this.request('/api/customer-segmentation')
-  }
-
-  async createCustomerSegment(data: any) {
-    return this.request('/api/customer-segmentation', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-  }
-
   // Journey Tracking APIs
   async getCustomerJourneys() {
     return this.request('/api/journey-tracking')
@@ -177,32 +256,80 @@ class ApiService {
 
   // Actionable Analytics APIs
   async getActionableInsights() {
-    return this.request('/api/actionable-analytics')
+    return this.request('/api/actionable_insights')
   }
 
   // AI Box APIs
   async getAIFeatures() {
-    return this.request('/api/ai-box')
+    return this.request('/api/ai/features')
+  }
+
+  async getAITasks() {
+    return this.request('/api/ai/tasks')
   }
 
   // Journey Funnel APIs
   async getJourneyFunnels() {
-    return this.request('/api/journey-funnel')
+    return this.request('/api/journey_funnels')
   }
 
   // AI Personalization APIs
   async getPersonalizationRules() {
-    return this.request('/api/ai-personalization')
+    return this.request('/api/personalization_rules')
+  }
+
+  // Customer Segmentation APIs
+  async getCustomerSegments() {
+    return this.request('/api/customer_segments')
+  }
+
+  async createCustomerSegment(data: any) {
+    return this.request('/api/customer_segments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   }
 
   // Custom Audience APIs
   async getCustomAudiences() {
-    return this.request('/api/custom-audience')
+    return this.request('/api/custom_audiences')
+  }
+
+  async createCustomAudience(data: any) {
+    return this.request('/api/custom_audiences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // Workflow Automation APIs
+  async getWorkflows() {
+    return this.request('/api/workflows')
+  }
+
+  async createWorkflow(data: any) {
+    return this.request('/api/workflows', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateWorkflow(id: string, data: any) {
+    return this.request(`/api/workflows/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteWorkflow(id: string) {
+    return this.request(`/api/workflows/${id}`, {
+      method: 'DELETE',
+    })
   }
 
   // Omni Channel APIs
   async getOmniChannelCampaigns() {
-    return this.request('/api/omni-channel')
+    return this.request('/api/omni_channel_campaigns')
   }
 
   // API Manager APIs
@@ -351,6 +478,45 @@ class ApiService {
     return this.request(`/api/orders/${orderId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    })
+  }
+
+  // Contact Messages APIs
+  async getContactMessages() {
+    return this.request('/api/contact/messages')
+  }
+
+  async updateContactMessageStatus(id: number, status: string) {
+    return this.request(`/api/contact/messages/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    })
+  }
+
+  // Admin Notifications APIs
+  async getAdminNotifications(status: string = 'all', limit: number = 50) {
+    return this.request(`/api/admin/notifications?status=${status}&limit=${limit}`)
+  }
+
+  async getAdminNotificationUnreadCount() {
+    return this.request('/api/admin/notifications/unread-count')
+  }
+
+  async markNotificationAsRead(id: number) {
+    return this.request(`/api/admin/notifications/${id}/read`, {
+      method: 'PUT',
+    })
+  }
+
+  async markAllNotificationsAsRead() {
+    return this.request('/api/admin/notifications/read-all', {
+      method: 'PUT',
+    })
+  }
+
+  async deleteNotification(id: number) {
+    return this.request(`/api/admin/notifications/${id}`, {
+      method: 'DELETE',
     })
   }
 }

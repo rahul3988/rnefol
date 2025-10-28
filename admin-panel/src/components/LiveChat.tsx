@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { MessageSquare, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Phone, Video, FileText, Image, Smile, Mic, MicOff, Headphones, Settings, CheckCircle } from 'lucide-react'
+import apiService from '../services/api'
 
 interface ChatMessage {
   id: string
@@ -61,161 +62,47 @@ interface ChatWidget {
 }
 
 export default function LiveChat() {
-  const [activeSessions] = useState<ChatSession[]>([
-    {
-      id: '1',
-      customerName: 'Priya Sharma',
-      customerEmail: 'priya.sharma@email.com',
-      customerPhone: '+91 98765 43210',
-      status: 'active',
-      priority: 'medium',
-      assignedAgent: 'Agent Raj',
-      lastMessage: 'Thank you for your help!',
-      lastMessageTime: '2024-01-20 14:30',
-      messageCount: 12,
-      tags: ['skincare', 'order-issue'],
-      notes: 'Customer had issues with order delivery',
-      customerLocation: 'Mumbai, India',
-      deviceInfo: 'Chrome on Windows',
-      referrer: 'Google Search'
-    },
-    {
-      id: '2',
-      customerName: 'Amit Kumar',
-      customerEmail: 'amit.kumar@email.com',
-      status: 'waiting',
-      priority: 'high',
-      lastMessage: 'I need help with my refund',
-      lastMessageTime: '2024-01-20 13:45',
-      messageCount: 5,
-      tags: ['refund', 'urgent'],
-      notes: 'Customer requesting refund for damaged product',
-      customerLocation: 'Delhi, India',
-      deviceInfo: 'Safari on iPhone',
-      referrer: 'Direct'
-    },
-    {
-      id: '3',
-      customerName: 'Sneha Patel',
-      customerEmail: 'sneha.patel@email.com',
-      customerPhone: '+91 76543 21098',
-      status: 'resolved',
-      priority: 'low',
-      assignedAgent: 'Agent Priya',
-      lastMessage: 'Issue resolved, thank you!',
-      lastMessageTime: '2024-01-20 12:15',
-      messageCount: 8,
-      tags: ['product-info', 'resolved'],
-      notes: 'Customer inquiry about product ingredients',
-      customerLocation: 'Bangalore, India',
-      deviceInfo: 'Firefox on Mac',
-      referrer: 'Social Media'
-    }
-  ])
+  const [activeSessions, setActiveSessions] = useState<ChatSession[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [agents] = useState<Agent[]>([
-    {
-      id: '1',
-      name: 'Agent Raj',
-      email: 'raj@nefol.com',
-      status: 'online',
-      activeSessions: 3,
-      totalSessions: 45,
-      rating: 4.8,
-      responseTime: 2.5,
-      specialization: ['skincare', 'orders', 'general']
-    },
-    {
-      id: '2',
-      name: 'Agent Priya',
-      email: 'priya@nefol.com',
-      status: 'busy',
-      activeSessions: 5,
-      totalSessions: 38,
-      rating: 4.9,
-      responseTime: 1.8,
-      specialization: ['products', 'ingredients', 'general']
-    },
-    {
-      id: '3',
-      name: 'Agent Amit',
-      email: 'amit@nefol.com',
-      status: 'away',
-      activeSessions: 0,
-      totalSessions: 52,
-      rating: 4.7,
-      responseTime: 3.2,
-      specialization: ['refunds', 'returns', 'general']
-    }
-  ])
+  useEffect(() => {
+    loadChatData()
+  }, [])
 
-  const [currentSession, setCurrentSession] = useState<ChatSession | null>(activeSessions[0])
-  const [messages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Hi, I have an issue with my recent order',
-      timestamp: '2024-01-20 14:00',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '2',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'Hello Priya! I\'m here to help. Can you please share your order number?',
-      timestamp: '2024-01-20 14:01',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '3',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Sure, it\'s ORD-2024-001',
-      timestamp: '2024-01-20 14:02',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '4',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'Thank you! I can see your order was delivered yesterday. What seems to be the issue?',
-      timestamp: '2024-01-20 14:03',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '5',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'The product packaging was damaged and one of the items is missing',
-      timestamp: '2024-01-20 14:05',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '6',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'I\'m sorry to hear that. Let me arrange a replacement for the missing item and also provide you with a discount code for the inconvenience.',
-      timestamp: '2024-01-20 14:07',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '7',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Thank you for your help!',
-      timestamp: '2024-01-20 14:30',
-      type: 'text',
-      isRead: true
+  const loadChatData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [sessionsData, agentsData] = await Promise.all([
+        apiService.getLiveChatSessions().catch(() => []),
+        apiService.getLiveChatAgents().catch(() => [])
+      ])
+      
+      if (Array.isArray(sessionsData) && sessionsData.length > 0) {
+        setActiveSessions(sessionsData)
+        setCurrentSession(sessionsData[0])
+      } else {
+        setActiveSessions([])
+        setCurrentSession(null)
+      }
+      
+      setAgents(Array.isArray(agentsData) ? agentsData : [])
+      setMessages([])
+    } catch (err) {
+      console.error('Failed to load chat data:', err)
+      setError('Failed to load chat data')
+      setActiveSessions([])
+      setAgents([])
+      setMessages([])
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [newMessage, setNewMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [showWidgetSettings, setShowWidgetSettings] = useState(false)
@@ -227,7 +114,29 @@ export default function LiveChat() {
     waitingSessions: activeSessions.filter(s => s.status === 'waiting').length,
     resolvedSessions: activeSessions.filter(s => s.status === 'resolved').length,
     onlineAgents: agents.filter(a => a.status === 'online').length,
-    averageResponseTime: agents.reduce((sum, agent) => sum + agent.responseTime, 0) / agents.length
+    averageResponseTime: agents.length > 0 ? agents.reduce((sum, agent) => sum + agent.responseTime, 0) / agents.length : 0
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading live chat data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+          <button onClick={loadChatData} className="ml-4 underline">Retry</button>
+        </div>
+      </div>
+    )
   }
 
   const getStatusColor = (status: string) => {
@@ -295,6 +204,12 @@ export default function LiveChat() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={loadChatData}
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Refresh
+          </button>
           <button
             onClick={() => setShowWidgetSettings(true)}
             className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2"

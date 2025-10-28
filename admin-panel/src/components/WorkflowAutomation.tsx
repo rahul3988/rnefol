@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Workflow, Play, Pause, Settings, Plus, Edit, Trash2, Eye, Copy, Clock, Users, Mail, MessageSquare, Bell, Calendar, Target, Filter, BarChart3 } from 'lucide-react'
+import apiService from '../services/api'
 
 interface WorkflowStep {
   id: string
@@ -40,207 +41,28 @@ interface WorkflowTemplate {
 }
 
 export default function WorkflowAutomation() {
-  const [workflows] = useState<Workflow[]>([
-    {
-      id: '1',
-      name: 'Welcome Series',
-      description: 'Send welcome emails to new customers',
-      status: 'active',
-      trigger: {
-        type: 'customer_signup',
-        conditions: []
-      },
-      steps: [
-        {
-          id: '1',
-          type: 'trigger',
-          name: 'Customer Signs Up',
-          description: 'Triggered when a new customer registers',
-          config: {},
-          position: { x: 0, y: 0 }
-        },
-        {
-          id: '2',
-          type: 'delay',
-          name: 'Wait 1 Hour',
-          description: 'Wait 1 hour before sending first email',
-          config: { duration: 3600 },
-          position: { x: 200, y: 0 }
-        },
-        {
-          id: '3',
-          type: 'action',
-          name: 'Send Welcome Email',
-          description: 'Send welcome email with discount code',
-          config: { template: 'welcome_email', subject: 'Welcome to Nefol!' },
-          position: { x: 400, y: 0 }
-        },
-        {
-          id: '4',
-          type: 'delay',
-          name: 'Wait 3 Days',
-          description: 'Wait 3 days before sending follow-up',
-          config: { duration: 259200 },
-          position: { x: 600, y: 0 }
-        },
-        {
-          id: '5',
-          type: 'action',
-          name: 'Send Product Recommendations',
-          description: 'Send personalized product recommendations',
-          config: { template: 'product_recommendations' },
-          position: { x: 800, y: 0 }
-        }
-      ],
-      stats: {
-        totalRuns: 1250,
-        successRate: 94.2,
-        lastRun: '2024-01-20 14:30',
-        nextRun: '2024-01-21 09:00'
-      },
-      createdAt: '2024-01-15',
-      updatedAt: '2024-01-20'
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment Recovery',
-      description: 'Recover abandoned carts with targeted messages',
-      status: 'active',
-      trigger: {
-        type: 'cart_abandoned',
-        conditions: [{ field: 'cart_value', operator: '>', value: 500 }]
-      },
-      steps: [
-        {
-          id: '1',
-          type: 'trigger',
-          name: 'Cart Abandoned',
-          description: 'Triggered when customer abandons cart',
-          config: {},
-          position: { x: 0, y: 0 }
-        },
-        {
-          id: '2',
-          type: 'delay',
-          name: 'Wait 2 Hours',
-          description: 'Wait 2 hours before sending reminder',
-          config: { duration: 7200 },
-          position: { x: 200, y: 0 }
-        },
-        {
-          id: '3',
-          type: 'action',
-          name: 'Send Email Reminder',
-          description: 'Send cart reminder email',
-          config: { template: 'cart_reminder' },
-          position: { x: 400, y: 0 }
-        },
-        {
-          id: '4',
-          type: 'delay',
-          name: 'Wait 24 Hours',
-          description: 'Wait 24 hours before sending SMS',
-          config: { duration: 86400 },
-          position: { x: 600, y: 0 }
-        },
-        {
-          id: '5',
-          type: 'action',
-          name: 'Send SMS Reminder',
-          description: 'Send SMS reminder with discount',
-          config: { template: 'cart_sms', discount: 10 },
-          position: { x: 800, y: 0 }
-        }
-      ],
-      stats: {
-        totalRuns: 850,
-        successRate: 78.5,
-        lastRun: '2024-01-20 12:15',
-        nextRun: '2024-01-21 08:00'
-      },
-      createdAt: '2024-01-10',
-      updatedAt: '2024-01-18'
-    },
-    {
-      id: '3',
-      name: 'Birthday Campaign',
-      description: 'Send birthday wishes and special offers',
-      status: 'paused',
-      trigger: {
-        type: 'customer_signup',
-        conditions: [{ field: 'birthday', operator: '=', value: 'today' }]
-      },
-      steps: [
-        {
-          id: '1',
-          type: 'trigger',
-          name: 'Customer Birthday',
-          description: 'Triggered on customer birthday',
-          config: {},
-          position: { x: 0, y: 0 }
-        },
-        {
-          id: '2',
-          type: 'action',
-          name: 'Send Birthday Email',
-          description: 'Send birthday wishes with special offer',
-          config: { template: 'birthday_email', discount: 20 },
-          position: { x: 200, y: 0 }
-        },
-        {
-          id: '3',
-          type: 'action',
-          name: 'Send SMS',
-          description: 'Send birthday SMS',
-          config: { template: 'birthday_sms' },
-          position: { x: 400, y: 0 }
-        }
-      ],
-      stats: {
-        totalRuns: 320,
-        successRate: 88.3,
-        lastRun: '2024-01-19 10:00',
-        nextRun: '2024-01-22 10:00'
-      },
-      createdAt: '2024-01-05',
-      updatedAt: '2024-01-15'
-    }
-  ])
+  const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [templates] = useState<WorkflowTemplate[]>([
-    {
-      id: '1',
-      name: 'Welcome Series',
-      description: 'Complete welcome series for new customers',
-      category: 'marketing',
-      steps: [],
-      isPopular: true
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment',
-      description: 'Recover abandoned carts with multi-channel approach',
-      category: 'sales',
-      steps: [],
-      isPopular: true
-    },
-    {
-      id: '3',
-      name: 'Order Follow-up',
-      description: 'Follow up after order delivery',
-      category: 'support',
-      steps: [],
-      isPopular: false
-    },
-    {
-      id: '4',
-      name: 'Re-engagement',
-      description: 'Re-engage inactive customers',
-      category: 'retention',
-      steps: [],
-      isPopular: true
+  useEffect(() => {
+    loadWorkflowsData()
+  }, [])
+
+  const loadWorkflowsData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getWorkflows().catch(() => [])
+      setWorkflows(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to load workflows data:', err)
+      setError('Failed to load workflows data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null)
   const [showCreateWorkflow, setShowCreateWorkflow] = useState(false)
@@ -248,10 +70,12 @@ export default function WorkflowAutomation() {
   const [activeTab, setActiveTab] = useState('workflows')
 
   const totalStats = {
-    totalWorkflows: workflows.length,
-    activeWorkflows: workflows.filter(w => w.status === 'active').length,
-    totalRuns: workflows.reduce((sum, w) => sum + w.stats.totalRuns, 0),
-    averageSuccessRate: workflows.reduce((sum, w) => sum + w.stats.successRate, 0) / workflows.length
+    totalWorkflows: workflows.length || 0,
+    activeWorkflows: workflows.filter(w => w.status === 'active').length || 0,
+    totalRuns: workflows.reduce((sum, w) => sum + (w.stats?.totalRuns || 0), 0),
+    averageSuccessRate: workflows.length > 0 
+      ? workflows.reduce((sum, w) => sum + (w.stats?.successRate || 0), 0) / workflows.length 
+      : 0
   }
 
   const getStatusColor = (status: string) => {
@@ -261,6 +85,40 @@ export default function WorkflowAutomation() {
       case 'draft': return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
       default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading workflows...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadWorkflowsData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const getCategoryColor = (category: string) => {

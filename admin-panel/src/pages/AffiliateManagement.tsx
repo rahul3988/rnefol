@@ -23,7 +23,11 @@ import {
   Calendar,
   User,
   Globe,
-  BarChart3
+  BarChart3,
+  Settings,
+  Percent,
+  Save,
+  Edit
 } from 'lucide-react'
 
 interface AffiliateApplication {
@@ -78,9 +82,18 @@ export default function AffiliateManagement() {
     approved: 0,
     rejected: 0
   })
+  
+  // Commission settings state
+  const [commissionSettings, setCommissionSettings] = useState({
+    commission_percentage: 15.0,
+    is_active: true
+  })
+  const [isEditingCommission, setIsEditingCommission] = useState(false)
+  const [commissionLoading, setCommissionLoading] = useState(false)
 
   useEffect(() => {
     fetchApplications()
+    fetchCommissionSettings()
   }, [statusFilter, currentPage, sortBy, sortOrder])
 
   // Debounced search effect
@@ -115,73 +128,26 @@ export default function AffiliateManagement() {
       const response = await fetch(`/api/admin/affiliate-applications?${params}`)
       const data = await response.json()
       
-      if (data.success) {
-        setApplications(data.data.applications)
-        setTotalPages(data.data.pagination.pages)
+      if (response.ok && data.applications) {
+        setApplications(data.applications)
+        setTotalPages(data.pagination.pages)
         
         // Update stats
         setStats({
-          total: data.data.pagination.total,
-          pending: data.data.applications.filter((app: AffiliateApplication) => app.status === 'pending').length,
-          approved: data.data.applications.filter((app: AffiliateApplication) => app.status === 'approved').length,
-          rejected: data.data.applications.filter((app: AffiliateApplication) => app.status === 'rejected').length
+          total: data.pagination.total,
+          pending: data.applications.filter((app: AffiliateApplication) => app.status === 'pending').length,
+          approved: data.applications.filter((app: AffiliateApplication) => app.status === 'approved').length,
+          rejected: data.applications.filter((app: AffiliateApplication) => app.status === 'rejected').length
         })
       } else {
-        console.error('Failed to fetch applications:', data.message)
-        // Fallback to mock data for development
-        const mockApplications: AffiliateApplication[] = [
-          {
-            id: 1,
-            name: 'John Doe',
-            email: 'john@example.com',
-            phone: '+1234567890',
-            instagram: '@johndoe',
-            youtube: 'https://youtube.com/@johndoe',
-            followers: '10k-25k',
-            platform: 'instagram',
-            experience: '2 years of affiliate marketing experience with skincare brands',
-            why_join: 'I love promoting natural skincare products and have a dedicated audience',
-            expected_sales: '10k-25k',
-            house_number: '123',
-            street: 'Main Street',
-            road: 'MG Road',
-            city: 'Mumbai',
-            pincode: '400001',
-            state: 'Maharashtra',
-            agree_terms: true,
-            status: 'pending',
-            application_date: new Date().toISOString()
-          },
-          {
-            id: 2,
-            name: 'Priya Sharma',
-            email: 'priya@example.com',
-            phone: '+9876543210',
-            instagram: '@priyasharma',
-            followers: '25k-50k',
-            platform: 'instagram',
-            experience: '3 years of beauty influencer experience',
-            why_join: 'Passionate about natural skincare and have built trust with my audience',
-            expected_sales: '25k-50k',
-            house_number: '456',
-            street: 'Park Street',
-            road: 'Park Street',
-            city: 'Delhi',
-            pincode: '110001',
-            state: 'Delhi',
-            agree_terms: true,
-            status: 'approved',
-            verification_code: 'a1b2c3d4e5f6g7h8i9j0',
-            application_date: new Date(Date.now() - 86400000).toISOString()
-          }
-        ]
-        setApplications(mockApplications)
-        setTotalPages(1)
+        console.error('Failed to fetch applications:', data.error || 'Unknown error')
+        setApplications([])
+        setTotalPages(0)
         setStats({
-          total: mockApplications.length,
-          pending: mockApplications.filter(app => app.status === 'pending').length,
-          approved: mockApplications.filter(app => app.status === 'approved').length,
-          rejected: mockApplications.filter(app => app.status === 'rejected').length
+          total: 0,
+          pending: 0,
+          approved: 0,
+          rejected: 0
         })
       }
     } catch (error) {
@@ -190,6 +156,51 @@ export default function AffiliateManagement() {
       alert('Failed to load applications. Please check your connection and try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchCommissionSettings = async () => {
+    try {
+      const response = await fetch('/api/admin/affiliate-commission-settings')
+      const data = await response.json()
+      
+      if (response.ok && data.commission_percentage !== undefined) {
+        setCommissionSettings(data)
+      }
+    } catch (error) {
+      console.error('Error fetching commission settings:', error)
+    }
+  }
+
+  const handleCommissionUpdate = async () => {
+    try {
+      setCommissionLoading(true)
+      const response = await fetch('/api/admin/affiliate-commission-settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(commissionSettings)
+      })
+
+      const data = await response.json()
+      
+      if (response.ok && data.commission_percentage !== undefined) {
+        alert('Commission settings updated successfully!')
+        setIsEditingCommission(false)
+        setCommissionSettings(data)
+        // Emit socket event for real-time updates
+        if ((window as any).io) {
+          (window as any).io.emit('commission_settings_updated', data)
+        }
+      } else {
+        alert('Failed to update commission settings: ' + (data.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error updating commission settings:', error)
+      alert('Error updating commission settings')
+    } finally {
+      setCommissionLoading(false)
     }
   }
 
@@ -209,13 +220,13 @@ export default function AffiliateManagement() {
 
       const data = await response.json()
       
-      if (data.success) {
-        alert(`Application approved! Verification code: ${data.data.verificationCode}`)
+      if (response.ok && data.application) {
+        alert(`Application approved! Verification code: ${data.verificationCode}`)
         setShowModal(false)
         setAdminNotes('')
         fetchApplications()
       } else {
-        alert('Failed to approve application')
+        alert('Failed to approve application: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
       console.error('Error approving application:', error)
@@ -242,13 +253,13 @@ export default function AffiliateManagement() {
 
       const data = await response.json()
       
-      if (data.success) {
+      if (response.ok && data.id) {
         alert('Application rejected')
         setShowModal(false)
         setRejectionReason('')
         fetchApplications()
       } else {
-        alert('Failed to reject application')
+        alert('Failed to reject application: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
       console.error('Error rejecting application:', error)
@@ -311,6 +322,53 @@ export default function AffiliateManagement() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {/* Commission Settings */}
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                <Percent className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                {isEditingCommission ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={commissionSettings.commission_percentage}
+                      onChange={(e) => setCommissionSettings(prev => ({ ...prev, commission_percentage: parseFloat(e.target.value) || 0 }))}
+                      className="w-20 px-2 py-1 text-sm border border-blue-300 dark:border-blue-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    />
+                    <span className="text-sm text-blue-600 dark:text-blue-400">%</span>
+                    <button
+                      onClick={handleCommissionUpdate}
+                      disabled={commissionLoading}
+                      className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                      title="Save changes"
+                    >
+                      <Save className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setIsEditingCommission(false)}
+                      className="p-1 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                      title="Cancel"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                      Commission: {commissionSettings.commission_percentage}%
+                    </span>
+                    <button
+                      onClick={() => setIsEditingCommission(true)}
+                      className="p-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 rounded"
+                      title="Edit commission percentage"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              
               <button
                 onClick={fetchApplications}
                 disabled={loading}

@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { TrendingUp, Users, MousePointer, ShoppingCart, Heart, Eye, Filter, Download, BarChart3, Target, Clock } from 'lucide-react'
+import apiService from '../services/api'
 
 interface FunnelStage {
   id: string
@@ -21,103 +22,36 @@ interface FunnelData {
 }
 
 export default function JourneyFunnel() {
-  const [funnelStages] = useState<FunnelStage[]>([
-    {
-      id: '1',
-      name: 'Awareness',
-      visitors: 10000,
-      conversions: 8500,
-      conversionRate: 85,
-      dropOffRate: 15,
-      color: 'bg-blue-500'
-    },
-    {
-      id: '2',
-      name: 'Interest',
-      visitors: 8500,
-      conversions: 6800,
-      conversionRate: 80,
-      dropOffRate: 20,
-      color: 'bg-green-500'
-    },
-    {
-      id: '3',
-      name: 'Consideration',
-      visitors: 6800,
-      conversions: 3400,
-      conversionRate: 50,
-      dropOffRate: 50,
-      color: 'bg-yellow-500'
-    },
-    {
-      id: '4',
-      name: 'Purchase',
-      visitors: 3400,
-      conversions: 2720,
-      conversionRate: 80,
-      dropOffRate: 20,
-      color: 'bg-purple-500'
-    },
-    {
-      id: '5',
-      name: 'Retention',
-      visitors: 2720,
-      conversions: 2176,
-      conversionRate: 80,
-      dropOffRate: 20,
-      color: 'bg-pink-500'
-    }
-  ])
+  const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([])
+  const [funnelData, setFunnelData] = useState<FunnelData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [funnelData] = useState<FunnelData[]>([
-    {
-      stage: 'Awareness',
-      visitors: 10000,
-      conversions: 8500,
-      conversionRate: 85,
-      previousRate: 82,
-      trend: 'up'
-    },
-    {
-      stage: 'Interest',
-      visitors: 8500,
-      conversions: 6800,
-      conversionRate: 80,
-      previousRate: 78,
-      trend: 'up'
-    },
-    {
-      stage: 'Consideration',
-      visitors: 6800,
-      conversions: 3400,
-      conversionRate: 50,
-      previousRate: 52,
-      trend: 'down'
-    },
-    {
-      stage: 'Purchase',
-      visitors: 3400,
-      conversions: 2720,
-      conversionRate: 80,
-      previousRate: 80,
-      trend: 'stable'
-    },
-    {
-      stage: 'Retention',
-      visitors: 2720,
-      conversions: 2176,
-      conversionRate: 80,
-      previousRate: 75,
-      trend: 'up'
+  useEffect(() => {
+    loadFunnelData()
+  }, [])
+
+  const loadFunnelData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getJourneyFunnels().catch(() => [])
+      setFunnelStages([]) // Will be set from data in the future
+      setFunnelData([])
+    } catch (err) {
+      console.error('Failed to load funnel data:', err)
+      setError('Failed to load funnel data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   const [timeRange, setTimeRange] = useState('30d')
   const [activeTab, setActiveTab] = useState('overview')
 
-  const totalVisitors = funnelStages[0].visitors
-  const totalConversions = funnelStages[funnelStages.length - 1].conversions
-  const overallConversionRate = (totalConversions / totalVisitors) * 100
+  const totalVisitors = funnelStages.length > 0 ? funnelStages[0].visitors : 0
+  const totalConversions = funnelStages.length > 0 ? funnelStages[funnelStages.length - 1].conversions : 0
+  const overallConversionRate = totalVisitors > 0 ? (totalConversions / totalVisitors) * 100 : 0
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {

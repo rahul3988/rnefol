@@ -13,7 +13,7 @@ export default function Orders() {
   const [items, setItems] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   const load = async () => {
     try {

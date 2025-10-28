@@ -13,7 +13,7 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   if (isAuthenticated) {
-    const from = location.state?.from?.pathname || '/'
+    const from = location.state?.from?.pathname || '/admin'
     return <Navigate to={from} replace />
   }
 

@@ -53,6 +53,8 @@ export interface Order {
   payment_method: string
   payment_type: string
   created_at: string
+  tracking_number?: string
+  estimated_delivery?: string
 }
 
 export interface Review {
@@ -391,6 +393,37 @@ export const paymentAPI = {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(gatewayData)
+    })
+    return handleResponse(response)
+  },
+
+  // Razorpay APIs
+  async createRazorpayOrder(orderData: {
+    amount: number
+    currency?: string
+    order_number: string
+    customer_name: string
+    customer_email: string
+    customer_phone: string
+  }) {
+    const response = await fetch(`${API_BASE}/api/payment/razorpay/create-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(orderData)
+    })
+    return handleResponse(response)
+  },
+
+  async verifyRazorpayPayment(paymentData: {
+    razorpay_order_id: string
+    razorpay_payment_id: string
+    razorpay_signature: string
+    order_number: string
+  }) {
+    const response = await fetch(`${API_BASE}/api/payment/razorpay/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(paymentData)
     })
     return handleResponse(response)
   }

@@ -2,30 +2,42 @@ import React from 'react'
 import { useCart } from '../contexts/CartContext'
 import { parsePrice } from '../contexts/CartContext'
 import PricingDisplay from '../components/PricingDisplay'
+import AuthGuard from '../components/AuthGuard'
 
 export default function Cart() {
-  const { items, removeItem, updateQuantity, clear, subtotal, tax, total, loading, error } = useCart()
+  const cartContext = useCart()
+  
+  // Safely access cart properties with fallbacks
+  const items = cartContext?.items || []
+  const removeItem = cartContext?.removeItem
+  const updateQuantity = cartContext?.updateQuantity
+  const clear = cartContext?.clear
+  const subtotal = cartContext?.subtotal || 0
+  const tax = cartContext?.tax || 0
+  const total = cartContext?.total || 0
+  const loading = cartContext?.loading || false
+  const error = cartContext?.error || null
 
   // Debug: Log cart items to see image data
   console.log('Cart items:', items)
 
   const handleQuantityChange = async (cartItemId: number, newQuantity: number) => {
     if (newQuantity < 1) {
-      await removeItem(cartItemId)
+      if (removeItem) await removeItem(cartItemId)
     } else {
-      await updateQuantity(cartItemId, newQuantity)
+      if (updateQuantity) await updateQuantity(cartItemId, newQuantity)
     }
   }
 
   const handleRemoveItem = async (cartItemId: number) => {
     if (window.confirm('Are you sure you want to remove this item from your cart?')) {
-      await removeItem(cartItemId)
+      if (removeItem) await removeItem(cartItemId)
     }
   }
 
   const handleClearCart = async () => {
     if (window.confirm('Are you sure you want to clear your entire cart?')) {
-      await clear()
+      if (clear) await clear()
     }
   }
 
@@ -52,12 +64,13 @@ export default function Cart() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-8">
+    <AuthGuard>
+    <div className="min-h-screen py-4 sm:py-6 md:py-8" style={{backgroundColor: '#F4F9F9'}}>
       <div className="mx-auto max-w-6xl px-4">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gradient-primary mb-2">Shopping Cart</h1>
-          <p className="text-slate-600">Review your items and proceed to checkout</p>
+        <div className="mb-4 sm:mb-6 md:mb-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2" style={{color: '#1B4965'}}>Shopping Cart</h1>
+          <p className="text-sm sm:text-base" style={{color: '#9DB4C0'}}>Review your items and proceed to checkout</p>
         </div>
 
         {items.length === 0 ? (
@@ -78,27 +91,29 @@ export default function Cart() {
                 <span className="text-6xl">🛒</span>
               </div>
             </div>
-            <h2 className="text-2xl font-semibold text-slate-700 mb-4">Your cart is empty</h2>
-            <p className="text-slate-500 mb-8">Looks like you haven't added any items to your cart yet.</p>
+            <h2 className="text-2xl font-semibold mb-4" style={{color: '#1B4965'}}>Your cart is empty</h2>
+            <p className="mb-8" style={{color: '#9DB4C0'}}>Looks like you haven't added any items to your cart yet.</p>
             <a 
-              href="#/shop" 
-              className="inline-block bg-gradient-primary text-white px-8 py-3 rounded-lg font-semibold hover:shadow-lg transition-all duration-300 hover:scale-105"
+              href="#/user/shop" 
+              className="inline-block text-white px-8 py-3 rounded-lg font-semibold hover:shadow-lg transition-all duration-300 hover:scale-105"
+              style={{backgroundColor: '#1B4965'}}
             >
               Start Shopping
             </a>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
             {/* Cart Items */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-semibold text-slate-800">
+                  <h2 className="text-xl font-semibold" style={{color: '#1B4965'}}>
                     Cart Items ({items.length})
                   </h2>
                   <button
                     onClick={handleClearCart}
-                    className="text-red-500 hover:text-red-700 font-medium text-sm hover:underline"
+                    className="font-medium text-sm hover:underline"
+                    style={{color: '#ef4444'}}
                   >
                     Clear Cart
                   </button>
@@ -119,26 +134,35 @@ export default function Cart() {
                   )}
                   
                   {items.map((item) => (
-                    <div key={item.id || `${item.slug}-${item.product_id}`} className="flex items-center space-x-4 p-4 border border-slate-200 rounded-lg hover:shadow-md transition-shadow">
+                    <div key={item.id || `${item.slug}-${item.product_id}`} className="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4 p-3 sm:p-4 border border-slate-200 rounded-lg hover:shadow-md transition-shadow">
                       {/* Product Image */}
                       <div className="flex-shrink-0">
                         <div className="relative">
                           <img
                             src={item.image || '/IMAGES/BANNER (1).jpg'}
                             alt={item.title}
-                            className="w-24 h-24 object-cover rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow"
+                            className="w-24 h-24 object-cover rounded-lg border shadow-sm hover:shadow-md transition-shadow"
+                            style={{borderColor: '#D0E8F2'}}
                             onError={(e) => {
-                              // Fallback to a default image if the main image fails to load
                               const target = e.target as HTMLImageElement
                               console.log('Image failed to load:', target.src)
-                              if (!target.src.includes('/IMAGES/BANNER (1).jpg')) {
-                                target.src = '/IMAGES/BANNER (1).jpg'
-                              } else if (!target.src.includes('/IMAGES/face.jpg')) {
-                                target.src = '/IMAGES/face.jpg'
-                              } else if (!target.src.includes('/IMAGES/body.jpg')) {
-                                target.src = '/IMAGES/body.jpg'
+                              
+                              // Prevent infinite loop by checking if we've already tried fallbacks
+                              if (!target.dataset.fallbackAttempted) {
+                                target.dataset.fallbackAttempted = 'true'
+                                // Try fallback images in order
+                                if (target.src.includes('/IMAGES/BANNER (1).jpg')) {
+                                  target.src = '/IMAGES/face.jpg'
+                                } else if (target.src.includes('/IMAGES/face.jpg')) {
+                                  target.src = '/IMAGES/body.jpg'
+                                } else {
+                                  // If all fallbacks fail, show placeholder
+                                  target.style.display = 'none'
+                                  const placeholder = target.nextElementSibling as HTMLElement
+                                  if (placeholder) placeholder.classList.remove('hidden')
+                                }
                               } else {
-                                // If even the fallback fails, show a placeholder
+                                // If fallback also failed, show placeholder
                                 target.style.display = 'none'
                                 const placeholder = target.nextElementSibling as HTMLElement
                                 if (placeholder) placeholder.classList.remove('hidden')
@@ -154,16 +178,17 @@ export default function Cart() {
 
                       {/* Product Details */}
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-slate-800 truncate">
+                        <h3 className="text-lg font-semibold truncate" style={{color: '#1B4965'}}>
                           {item.title}
                         </h3>
-                        <p className="text-slate-600 text-sm">
+                        <div className="text-slate-600 text-sm">
                           <PricingDisplay 
                             product={item} 
-                            csvProduct={item.csvProduct}
+                            csvProduct={undefined}
                             className="text-sm"
+                            inline={true}
                           />
-                        </p>
+                        </div>
                         <p className="text-slate-600 text-sm">
                           Total: {calculateItemTotal(item.price, item.quantity)}
                         </p>
@@ -208,7 +233,7 @@ export default function Cart() {
 
             {/* Order Summary */}
             <div className="lg:col-span-1">
-              <div className="bg-white rounded-xl shadow-lg p-6 sticky top-8">
+              <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 sticky top-8">
                 <h2 className="text-xl font-semibold text-slate-800 mb-6">Order Summary</h2>
                 
                 <div className="space-y-4 mb-6">
@@ -246,7 +271,7 @@ export default function Cart() {
                     </div>
                   )}
                   <hr className="border-slate-200" />
-                  <div className="flex justify-between text-lg font-semibold text-slate-800">
+                  <div className="flex justify-between text-lg font-semibold" style={{color: '#1B4965'}}>
                     <span>Total</span>
                     <span>₹{total.toLocaleString()}</span>
                   </div>
@@ -254,14 +279,16 @@ export default function Cart() {
 
                 <div className="space-y-3">
                   <a
-                    href="#/checkout"
-                    className="block w-full bg-gradient-primary text-white py-3 px-4 rounded-lg font-semibold text-center hover:shadow-lg transition-all duration-300 hover:scale-105"
+                    href="#/user/checkout"
+                    className="block w-full text-white py-3 px-4 rounded-lg font-semibold text-center hover:shadow-lg transition-all duration-300 hover:scale-105"
+                    style={{backgroundColor: '#1B4965'}}
                   >
                     Proceed to Checkout
                   </a>
                   <a
-                    href="#/shop"
-                    className="block w-full border border-slate-300 text-slate-700 py-3 px-4 rounded-lg font-semibold text-center hover:bg-slate-50 transition-colors"
+                    href="#/user/shop"
+                    className="block w-full py-3 px-4 rounded-lg font-semibold text-center transition-colors"
+                    style={{borderColor: '#9DB4C0', borderWidth: '1px', color: '#1B4965'}}
                   >
                     Continue Shopping
                   </a>
@@ -280,5 +307,6 @@ export default function Cart() {
         )}
       </div>
     </div>
+    </AuthGuard>
   )
 }

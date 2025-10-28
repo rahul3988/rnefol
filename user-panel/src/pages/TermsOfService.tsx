@@ -254,7 +254,7 @@ export default function TermsOfService() {
               Contact Support
             </a>
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="inline-block border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-purple-600 transition-colors"
             >
               Support Center

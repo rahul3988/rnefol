@@ -2,6 +2,7 @@
 import { Request, Response } from 'express'
 import { Pool } from 'pg'
 import { sendError, sendSuccess, validateRequired } from '../utils/apiHelpers'
+import { logUserActivity } from '../utils/userActivitySchema'
 
 // Optimized GET /api/cart
 export async function getCart(pool: Pool, req: Request, res: Response) {
@@ -9,14 +10,14 @@ export async function getCart(pool: Pool, req: Request, res: Response) {
     const userId = req.userId // Set by authenticateToken middleware
     
     const { rows } = await pool.query(`
-      SELECT c.*, p.title, p.price, p.list_image, p.slug, p.details
+      SELECT c.*, p.title, p.price, p.list_image, p.slug, p.details, p.category
       FROM cart c
       JOIN products p ON c.product_id = p.id
       WHERE c.user_id = $1
       ORDER BY c.created_at DESC
     `, [userId])
     
-    // Transform the data to use discounted price if available
+    // Transform the data to match frontend expectations
     const transformedRows = rows.map((row: any) => {
       const details = row.details || {}
       let finalPrice = row.price
@@ -27,11 +28,20 @@ export async function getCart(pool: Pool, req: Request, res: Response) {
       }
       
       return {
-        ...row,
-        price: finalPrice,
-        original_price: row.price,
+        id: row.id,
+        product_id: row.product_id,
+        slug: row.slug,
+        title: row.title,
+        price: String(finalPrice), // Convert to string as frontend expects
+        image: row.list_image, // Rename list_image to image
+        quantity: row.quantity,
+        category: row.category,
+        mrp: details.mrp || null,
         discounted_price: details.websitePrice || null,
-        mrp: details.mrp || null
+        original_price: String(row.price),
+        csvProduct: details,
+        created_at: row.created_at,
+        updated_at: row.updated_at
       }
     })
     
@@ -84,6 +94,21 @@ export async function addToCart(pool: Pool, req: Request, res: Response) {
       `, [userId, product_id, quantity])
       
       sendSuccess(res, rows[0], 201)
+    }
+    // Log cart activity
+    const productData = await pool.query('SELECT title, price FROM products WHERE id = $1', [product_id])
+    if (productData.rows.length > 0) {
+      await logUserActivity(pool, {
+        user_id: parseInt(userId as string),
+        activity_type: 'cart',
+        activity_subtype: 'add',
+        product_id,
+        product_name: productData.rows[0].title,
+        product_price: productData.rows[0].price,
+        quantity,
+        user_agent: req.headers['user-agent'],
+        ip_address: req.ip || req.connection.remoteAddress
+      })
     }
   } catch (err) {
     sendError(res, 500, 'Failed to add to cart', err)
@@ -140,6 +165,14 @@ export async function removeFromCart(pool: Pool, req: Request, res: Response) {
     const { cartItemId } = req.params
     const userId = req.userId
     
+    // Get item details before deletion for logging
+    const itemData = await pool.query(`
+      SELECT c.*, p.title, p.price 
+      FROM cart c 
+      JOIN products p ON c.product_id = p.id
+      WHERE c.id = $1 AND c.user_id = $2
+    `, [cartItemId, userId])
+    
     const { rows } = await pool.query(`
       DELETE FROM cart 
       WHERE id = $1 AND user_id = $2
@@ -151,6 +184,21 @@ export async function removeFromCart(pool: Pool, req: Request, res: Response) {
     }
     
     sendSuccess(res, { message: 'Item removed from cart' })
+    
+    // Log cart removal activity
+    if (itemData.rows.length > 0) {
+      await logUserActivity(pool, {
+        user_id: parseInt(userId as string),
+        activity_type: 'cart',
+        activity_subtype: 'remove',
+        product_id: itemData.rows[0].product_id,
+        product_name: itemData.rows[0].title,
+        product_price: itemData.rows[0].price,
+        quantity: itemData.rows[0].quantity,
+        user_agent: req.headers['user-agent'],
+        ip_address: req.ip || req.connection.remoteAddress
+      })
+    }
   } catch (err) {
     sendError(res, 500, 'Failed to remove cart item', err)
   }
@@ -218,6 +266,15 @@ export async function login(pool: Pool, req: Request, res: Response) {
         email: user.email
       }
     })
+    
+    // Log login activity
+    await logUserActivity(pool, {
+      user_id: user.id,
+      activity_type: 'auth',
+      activity_subtype: 'login',
+      user_agent: req.headers['user-agent'],
+      ip_address: req.ip || req.connection.remoteAddress
+    })
   } catch (err) {
     sendError(res, 500, 'Login failed', err)
   }
@@ -265,6 +322,15 @@ export async function register(pool: Pool, req: Request, res: Response) {
       token,
       user
     }, 201)
+    
+    // Log registration activity
+    await logUserActivity(pool, {
+      user_id: user.id,
+      activity_type: 'auth',
+      activity_subtype: 'register',
+      user_agent: req.headers['user-agent'],
+      ip_address: req.ip || req.connection.remoteAddress
+    })
   } catch (err: any) {
     console.error('❌ Registration error:', err)
     if (err?.code === '23505') {

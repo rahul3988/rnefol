@@ -118,23 +118,23 @@ export default function Home() {
 
   // Functional handlers for buttons and CTAs
   const handleExploreCollection = () => {
-    window.location.hash = '#/shop'
+    window.location.hash = '#/user/shop'
   }
 
   const handleJoinVIP = () => {
     if (isAuthenticated) {
-      window.location.hash = '#/loyalty-rewards'
+      window.location.hash = '#/user/loyalty-rewards'
     } else {
-      window.location.hash = '#/login'
+      window.location.hash = '#/user/login'
     }
   }
 
   const handleShopNow = () => {
-    window.location.hash = '#/shop'
+    window.location.hash = '#/user/shop'
   }
 
   const handleViewKit = () => {
-    window.location.hash = '#/combos'
+    window.location.hash = '#/user/combos'
   }
 
   const handleAddToCart = (product: any) => {
@@ -143,7 +143,7 @@ export default function Home() {
 
   const handleBuyNow = (product: any) => {
     addItem(product, 1)
-    window.location.hash = '#/cart'
+    window.location.hash = '#/user/cart'
   }
 
   const handleAddToWishlist = async (product: any) => {
@@ -153,7 +153,7 @@ export default function Home() {
         console.log('Added to wishlist:', product.title)
       } else {
         // Redirect to login if not authenticated
-        window.location.hash = '#/login'
+        window.location.hash = '#/user/login'
       }
     } catch (error: any) {
       console.error('Failed to add to wishlist:', error)
@@ -247,36 +247,36 @@ export default function Home() {
   return (
     <main className="min-h-screen overflow-x-hidden" style={{backgroundColor: '#F4F9F9'}}>
       {/* Hero Banner Section - Enhanced Colors */}
-      <section className="relative py-20" style={{background: 'linear-gradient(135deg, #4B97C9 0%, #D0E8F2 50%, #9DB4C0 100%)'}}>
+      <section className="relative py-8 sm:py-12 md:py-16 lg:py-20" style={{background: 'linear-gradient(135deg, #4B97C9 0%, #D0E8F2 50%, #9DB4C0 100%)'}}>
         <div className="mx-auto max-w-7xl px-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div className="text-left">
-              <h1 className="text-4xl md:text-6xl font-serif mb-6 text-white">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 md:gap-12 items-center">
+            <div className="text-left order-2 lg:order-1">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-serif mb-3 sm:mb-4 md:mb-6 text-white">
                 ELEVATE YOUR SKIN WITH
-            </h1>
-              <h2 className="text-5xl md:text-7xl font-serif font-bold mb-6 text-white">
+              </h1>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-serif font-bold mb-3 sm:mb-4 md:mb-6 text-white">
                 NATURAL BEAUTY
               </h2>
-              <p className="text-lg mb-8 font-light text-white">
+              <p className="text-sm sm:text-base md:text-lg mb-4 sm:mb-6 md:mb-8 font-light text-white">
                 infused with premium natural ingredients
               </p>
               <button
                 onClick={handleExploreCollection}
-                className="px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg"
+                className="px-4 sm:px-6 md:px-8 py-3 sm:py-3.5 md:py-4 text-white font-medium transition-all duration-300 text-xs sm:text-sm tracking-wide uppercase shadow-lg"
                 style={{backgroundColor: '#1B4965'}}
               >
                 SHOP NOW
               </button>
             </div>
-            <div className="relative">
+            <div className="relative order-1 lg:order-2">
               <div className="relative z-10">
                 <img 
                   src={heroImages[heroIndex]} 
                   alt="Nefol Hero"
-                  className="w-full h-96 object-cover rounded-lg shadow-2xl"
+                  className="w-full h-48 sm:h-64 md:h-80 lg:h-96 object-cover rounded-lg shadow-2xl"
                 />
-                <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full flex items-center justify-center shadow-lg" style={{backgroundColor: '#1B4965'}}>
-                  <span className="text-white text-xs font-bold">NEW</span>
+                <div className="absolute -top-2 -right-2 sm:-top-4 sm:-right-4 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center shadow-lg" style={{backgroundColor: '#1B4965'}}>
+                  <span className="text-white text-xs sm:text-sm font-bold">NEW</span>
                 </div>
               </div>
             </div>
@@ -285,18 +285,18 @@ export default function Home() {
       </section>
 
       {/* Shop by Category - Enhanced Colors */}
-      <section className="py-16" style={{backgroundColor: '#D0E8F2'}}>
+      <section className="py-8 sm:py-12 md:py-16" style={{backgroundColor: '#D0E8F2'}}>
         <div className="mx-auto max-w-7xl px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-serif mb-4" style={{color: '#1B4965'}}>
+          <div className="text-center mb-6 sm:mb-8 md:mb-12">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-serif mb-2 sm:mb-3 md:mb-4" style={{color: '#1B4965'}}>
               SHOP BY CATEGORY
             </h2>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 md:gap-8">
             {/* Body */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/body'}>
+            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/body'}>
               <div
-                className="mx-auto mb-4 flex items-center justify-center w-full max-w-[280px] md:max-w-[360px] aspect-square"
+                className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
                   WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
                   maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
@@ -309,13 +309,13 @@ export default function Home() {
                   style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
                 />
               </div>
-              <h3 className="text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Body</h3>
+              <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Body</h3>
             </div>
 
             {/* Face */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/face'}>
+            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/face'}>
               <div
-                className="mx-auto mb-4 flex items-center justify-center w-full max-w-[280px] md:max-w-[360px] aspect-square"
+                className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
                   WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
                   maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
@@ -328,13 +328,13 @@ export default function Home() {
                   style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
                 />
               </div>
-              <h3 className="text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Face</h3>
+              <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Face</h3>
             </div>
 
             {/* Hair */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/hair'}>
+            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/hair'}>
               <div
-                className="mx-auto mb-4 flex items-center justify-center w-full max-w-[280px] md:max-w-[360px] aspect-square"
+                className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
                   WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
                   maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
@@ -347,13 +347,13 @@ export default function Home() {
                   style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
                 />
               </div>
-              <h3 className="text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Hair</h3>
+              <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Hair</h3>
             </div>
 
             {/* Combos */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/combos'}>
+            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/combos'}>
               <div
-                className="mx-auto mb-4 flex items-center justify-center w-full max-w-[280px] md:max-w-[360px] aspect-square"
+                className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
                   WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
                   maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
@@ -366,7 +366,7 @@ export default function Home() {
                   style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
                 />
               </div>
-              <h3 className="text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Combos</h3>
+              <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Combos</h3>
             </div>
           </div>
         </div>
@@ -414,11 +414,11 @@ export default function Home() {
         </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="bg-white rounded-lg shadow-sm">
-                  <div className="h-80 rounded-t-lg" style={{backgroundColor: '#D0E8F2'}}></div>
-                  <div className="p-6">
+                  <div className="h-48 sm:h-64 md:h-80 rounded-t-lg" style={{backgroundColor: '#D0E8F2'}}></div>
+                  <div className="p-4 sm:p-6">
                     <div className="h-6 mb-2" style={{backgroundColor: '#9DB4C0'}}></div>
                     <div className="h-4 mb-4" style={{backgroundColor: '#9DB4C0'}}></div>
                     <div className="h-8" style={{backgroundColor: '#9DB4C0'}}></div>
@@ -427,15 +427,15 @@ export default function Home() {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
               {products.slice(0, 6).map((product, index) => {
                 return (
-                  <div key={product.slug} className="bg-white rounded-lg shadow-sm group cursor-pointer" onClick={() => window.location.hash = `#/product/${product.slug}`}>
+                  <div key={product.slug} className="bg-white rounded-lg shadow-sm group cursor-pointer flex flex-col" onClick={() => window.location.hash = `#/user/product/${product.slug}`}>
                     <div className="relative overflow-hidden rounded-t-lg">
                       <img 
-                        src={product.listImage || product.list_image || '/IMAGES/placeholder.jpg'} 
+                        src={product.listImage || product.list_image || '/IMAGES/default-product.jpg'} 
                         alt={product.title}
-                        className="w-full h-80 object-cover transition-transform duration-500 group-hover:scale-105"
+                        className="w-full h-48 sm:h-64 md:h-80 object-cover transition-transform duration-500 group-hover:scale-105"
                       />
                       <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <button 
@@ -454,8 +454,8 @@ export default function Home() {
                         </span>
                       </div>
                     </div>
-                    <div className="p-6">
-                      <h3 className="text-lg font-medium tracking-wide mb-2" style={{color: '#1B4965'}}>
+                    <div className="p-4 sm:p-6 flex flex-col h-full">
+                      <h3 className="text-base sm:text-lg font-medium tracking-wide mb-2 line-clamp-2" style={{color: '#1B4965'}}>
                         {product.title}
                       </h3>
                       <div className="flex items-center mb-2">
@@ -468,7 +468,7 @@ export default function Home() {
                         </div>
                         <span className="text-sm ml-2" style={{color: '#9DB4C0'}}>4.5 (45 Reviews)</span>
                       </div>
-                      <div className="flex items-center justify-between pt-2">
+                      <div className="mt-auto pt-2">
                         <div className="flex flex-col w-full">
                           <div className="flex items-center gap-2 mb-2">
                             <PricingDisplay 
@@ -482,8 +482,8 @@ export default function Home() {
                                 e.stopPropagation()
                                 handleAddToCart(product)
                               }}
-                              className="flex-1 px-3 py-2 text-white text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
-                              style={{backgroundColor: '#4B97C9'}}
+                              className="flex-1 px-2 sm:px-3 py-2 text-white text-xs sm:text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
+                              style={{backgroundColor: '#4B97C9', minHeight: '44px'}}
                             >
                               ADD TO CART
                             </button>
@@ -492,8 +492,8 @@ export default function Home() {
                                 e.stopPropagation()
                                 handleBuyNow(product)
                               }}
-                              className="flex-1 px-3 py-2 text-white text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
-                              style={{backgroundColor: '#1B4965'}}
+                              className="flex-1 px-2 sm:px-3 py-2 text-white text-xs sm:text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
+                              style={{backgroundColor: '#1B4965', minHeight: '44px'}}
                             >
                               BUY NOW
                             </button>
@@ -794,6 +794,7 @@ export default function Home() {
                 <div className="text-center text-white">
                   <h3 className="text-2xl font-serif mb-2">LUXURY SKINCARE</h3>
                   <button 
+                    onClick={handleShopNow}
                     className="px-6 py-3 bg-white text-black font-medium transition-all duration-300 text-sm tracking-wide uppercase rounded"
                   >
                     SHOP NOW
@@ -811,6 +812,7 @@ export default function Home() {
                 <div className="text-center text-white">
                   <h3 className="text-2xl font-serif mb-2">NATURAL BEAUTY</h3>
                   <button 
+                    onClick={handleShopNow}
                     className="px-6 py-3 bg-white text-black font-medium transition-all duration-300 text-sm tracking-wide uppercase rounded"
                   >
                     SHOP NOW

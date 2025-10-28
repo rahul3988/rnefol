@@ -35,83 +35,28 @@ const Returns: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
-  // Mock data for demonstration
+  // Fetch returns data from API
   useEffect(() => {
-    const mockReturns: Return[] = [
-      {
-        id: '1',
-        returnNumber: 'RET-2024-001',
-        orderId: 'ORD-001',
-        customerName: 'John Doe',
-        customerEmail: 'john@example.com',
-        reason: 'Product not as described',
-        status: 'pending',
-        items: [
-          {
-            id: '1',
-            productName: 'Face Cleanser',
-            quantity: 1,
-            unitPrice: 75.00,
-            reason: 'Wrong product received',
-            condition: 'new'
-          }
-        ],
-        totalAmount: 75.00,
-        refundAmount: 75.00,
-        createdAt: '2024-01-15',
-        updatedAt: '2024-01-15',
-        notes: 'Customer received wrong product'
-      },
-      {
-        id: '2',
-        returnNumber: 'RET-2024-002',
-        orderId: 'ORD-002',
-        customerName: 'Jane Smith',
-        customerEmail: 'jane@example.com',
-        reason: 'Product damaged during shipping',
-        status: 'approved',
-        items: [
-          {
-            id: '2',
-            productName: 'Hydrating Moisturizer',
-            quantity: 1,
-            unitPrice: 200.00,
-            reason: 'Damaged packaging',
-            condition: 'damaged'
-          }
-        ],
-        totalAmount: 200.00,
-        refundAmount: 200.00,
-        createdAt: '2024-01-10',
-        updatedAt: '2024-01-12',
-        notes: 'Approved for full refund'
-      },
-      {
-        id: '3',
-        returnNumber: 'RET-2024-003',
-        orderId: 'ORD-003',
-        customerName: 'Mike Johnson',
-        customerEmail: 'mike@example.com',
-        reason: 'Changed mind',
-        status: 'completed',
-        items: [
-          {
-            id: '3',
-            productName: 'Face Serum',
-            quantity: 2,
-            unitPrice: 150.00,
-            reason: 'No longer needed',
-            condition: 'used'
-          }
-        ],
-        totalAmount: 300.00,
-        refundAmount: 270.00,
-        createdAt: '2024-01-05',
-        updatedAt: '2024-01-08',
-        notes: 'Refunded with 10% restocking fee'
+    const fetchReturns = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('/api/returns');
+        if (response.ok) {
+          const data = await response.json();
+          setReturns(data.returns || []);
+        } else {
+          console.error('Failed to fetch returns');
+          setReturns([]);
+        }
+      } catch (error) {
+        console.error('Error fetching returns:', error);
+        setReturns([]);
+      } finally {
+        setLoading(false);
       }
-    ];
-    setReturns(mockReturns);
+    };
+
+    fetchReturns();
   }, []);
 
   const getStatusColor = (status: string) => {

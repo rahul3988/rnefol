@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Download, Calendar, TrendingUp, DollarSign, Users, BarChart3, PieChart, FileText } from 'lucide-react'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.66:4000'
+
 interface ReportData {
   id: string
   name: string
@@ -31,57 +33,51 @@ export default function Reports() {
 
   const fetchReports = async () => {
     try {
-      // Mock data - replace with actual API call later
-      const mockReports: ReportData[] = [
-        {
-          id: '1',
-          name: 'Monthly Earnings Report - December 2024',
-          type: 'earnings',
-          description: 'Detailed breakdown of commissions earned this month',
-          lastGenerated: '2024-12-15',
-          size: '2.3 MB',
-          format: 'PDF'
-        },
-        {
-          id: '2',
-          name: 'Referral Performance Analysis',
-          type: 'referrals',
-          description: 'Analysis of referral conversion rates and performance metrics',
-          lastGenerated: '2024-12-10',
-          size: '1.8 MB',
-          format: 'Excel'
-        },
-        {
-          id: '3',
-          name: 'Quarterly Performance Summary',
-          type: 'performance',
-          description: 'Q4 2024 performance summary with trends and insights',
-          lastGenerated: '2024-12-01',
-          size: '3.1 MB',
-          format: 'PDF'
-        },
-        {
-          id: '4',
-          name: 'Referral Data Export',
-          type: 'referrals',
-          description: 'Complete referral data in CSV format for analysis',
-          lastGenerated: '2024-11-28',
-          size: '856 KB',
-          format: 'CSV'
-        }
-      ]
-
-      const mockStats: ReportStats = {
-        totalReports: mockReports.length,
-        thisMonthReports: mockReports.filter(r => new Date(r.lastGenerated).getMonth() === new Date().getMonth()).length,
-        totalDownloads: 47,
-        lastReportDate: mockReports[0].lastGenerated
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setReports([])
+        setStats(null)
+        return
       }
 
-      setReports(mockReports)
-      setStats(mockStats)
+      const response = await fetch(`${API_BASE_URL}/api/affiliate/reports`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setReports(data.reports || [])
+        
+        // Calculate stats from real data
+        const totalReports = data.reports?.length || 0
+        const thisMonthReports = data.reports?.filter((r: any) => {
+          const reportDate = new Date(r.lastGenerated)
+          const currentDate = new Date()
+          return reportDate.getMonth() === currentDate.getMonth() && 
+                 reportDate.getFullYear() === currentDate.getFullYear()
+        }).length || 0
+        
+        const totalDownloads = data.reports?.reduce((sum: number, r: any) => sum + (r.downloads || 0), 0) || 0
+        const lastReportDate = data.reports?.length > 0 ? data.reports[0].lastGenerated : null
+        
+        setStats({
+          totalReports,
+          thisMonthReports,
+          totalDownloads,
+          lastReportDate
+        })
+      } else {
+        console.error('Failed to fetch reports')
+        setReports([])
+        setStats(null)
+      }
     } catch (error) {
       console.error('Failed to fetch reports:', error)
+      setReports([])
+      setStats(null)
     } finally {
       setLoading(false)
     }
@@ -146,7 +142,7 @@ export default function Reports() {
         {/* Header */}
         <div className="mb-8">
           <button 
-            onClick={() => window.location.hash = '#/affiliate-partner'}
+            onClick={() => window.location.hash = '#/user/affiliate-partner'}
             className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors mb-4"
           >
             <ArrowLeft className="h-4 w-4" />

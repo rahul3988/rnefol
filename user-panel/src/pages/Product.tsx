@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
 import type { Product } from '../types'
 import { useCart } from '../contexts/CartContext'
+import { useAuth } from '../contexts/AuthContext'
 import { getApiBase } from '../utils/apiBase'
+import AuthGuard from '../components/AuthGuard'
 import { userSocketService } from '../services/socket'
 
 export default function ProductPage() {
@@ -15,8 +17,12 @@ export default function ProductPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const hasLoaded = useRef(false)
   
-  // Use cart context
-  const { addItem } = useCart()
+  // Use cart context and auth
+  const cartContext = useCart()
+  const { isAuthenticated } = useAuth()
+  
+  // Safely access cart methods
+  const addItem = cartContext?.addItem
 
   useEffect(() => {
     // Prevent duplicate calls
@@ -25,7 +31,7 @@ export default function ProductPage() {
     
     const load = async () => {
       const hash = window.location.hash || '#/'
-      const match = hash.match(/^#\/product\/([^?#]+)/)
+      const match = hash.match(/^#\/user\/product\/([^?#]+)/)
       const slug = match?.[1]
       if (!slug) return
       const apiBase = getApiBase()
@@ -171,7 +177,7 @@ export default function ProductPage() {
   const refreshData = async () => {
     setIsRefreshing(true)
     const hash = window.location.hash || '#/'
-    const match = hash.match(/^#\/product\/([^?#]+)/)
+    const match = hash.match(/^#\/user\/product\/([^?#]+)/)
     const slug = match?.[1]
     if (!slug) return
     const apiBase = getApiBase()
@@ -257,20 +263,21 @@ export default function ProductPage() {
   ]
 
   return (
+    <AuthGuard>
     <div className="overflow-x-hidden bg-white">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <a href="#/" className="text-2xl font-bold text-gray-900">NEFOL</a>
+              <a href="#/user/" className="text-2xl font-bold text-gray-900">NEFOL</a>
               <nav className="hidden md:flex space-x-6">
-                <a href="#/" className="text-gray-600 hover:text-gray-900">Home</a>
-                <a href="#/shop" className="text-gray-600 hover:text-gray-900">Shop</a>
-                <a href="#/face" className="text-gray-600 hover:text-gray-900">Face</a>
-                <a href="#/hair" className="text-gray-600 hover:text-gray-900">Hair</a>
-                <a href="#/body" className="text-gray-600 hover:text-gray-900">Body</a>
-                <a href="#/combos" className="text-gray-600 hover:text-gray-900">Combos</a>
+                <a href="#/user/" className="text-gray-600 hover:text-gray-900">Home</a>
+                <a href="#/user/shop" className="text-gray-600 hover:text-gray-900">Shop</a>
+                <a href="#/user/face" className="text-gray-600 hover:text-gray-900">Face</a>
+                <a href="#/user/hair" className="text-gray-600 hover:text-gray-900">Hair</a>
+                <a href="#/user/body" className="text-gray-600 hover:text-gray-900">Body</a>
+                <a href="#/user/combos" className="text-gray-600 hover:text-gray-900">Combos</a>
               </nav>
             </div>
             <div className="flex items-center space-x-4">
@@ -305,25 +312,25 @@ export default function ProductPage() {
         </div>
       </header>
 
-      <main className="py-8 bg-white">
+      <main className="py-4 sm:py-6 md:py-8 bg-white">
         <div className="mx-auto max-w-7xl px-4">
           {/* Breadcrumb */}
-          <nav className="mb-6 text-sm">
-            <ol className="flex items-center space-x-2 text-gray-600">
-              <li><a href="#/" className="hover:text-gray-900">Home</a></li>
+          <nav className="mb-4 sm:mb-6 text-xs sm:text-sm">
+            <ol className="flex items-center space-x-1 sm:space-x-2 text-gray-600 flex-wrap">
+              <li><a href="#/user/" className="hover:text-gray-900">Home</a></li>
               <li>/</li>
-              <li><a href="#/shop" className="hover:text-gray-900">Shop</a></li>
+              <li><a href="#/user/shop" className="hover:text-gray-900">Shop</a></li>
               <li>/</li>
-              <li><a href={`#/shop?category=${product.category}`} className="hover:text-gray-900">{product.category}</a></li>
+              <li><a href={`#/user/shop?category=${product.category}`} className="hover:text-gray-900 truncate max-w-[100px] sm:max-w-none">{product.category}</a></li>
               <li>/</li>
-              <li className="text-gray-900">{product.title}</li>
+              <li className="text-gray-900 truncate max-w-[150px] sm:max-w-none">{product.title}</li>
             </ol>
           </nav>
 
           {/* Product Details */}
-          <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 mb-16">
+          <div className="grid grid-cols-1 gap-6 sm:gap-8 md:gap-12 lg:grid-cols-2 mb-8 sm:mb-12 md:mb-16">
             {/* Product Media */}
-            <div className="space-y-4">
+            <div className="space-y-2 sm:space-y-4">
               <div className="aspect-square overflow-hidden rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
                 {(() => {
                   const mainImage = product.pdpImages[selectedImage] || product.listImage
@@ -349,7 +356,7 @@ export default function ProductPage() {
                 })()}
               </div>
               {product.pdpImages.length > 1 && (
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                   {product.pdpImages.slice(0, 5).map((src, index) => (
                     <button
                       key={index}
@@ -376,12 +383,12 @@ export default function ProductPage() {
             </div>
 
             {/* Product Info */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-2">
                   {csvProduct?.['Product Name'] || product.title}
                 </h1>
-                <p className="text-lg text-gray-600 mb-4">
+                <p className="text-base sm:text-lg text-gray-600 mb-4">
                   {csvProduct?.['Subtitle / Tagline'] || 'Premium natural skincare for radiant skin'}
                 </p>
                 
@@ -504,41 +511,51 @@ export default function ProductPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                   <button 
                     onClick={() => {
-                      if (product) {
-                        addItem(product, quantity)
-                        // Show success message
-                        const button = document.querySelector('[data-add-to-cart]') as HTMLButtonElement
-                        if (button) {
-                          const originalText = button.textContent
-                          button.textContent = 'Added to Cart!'
-                          button.classList.add('bg-green-600', 'hover:bg-green-700')
-                      button.classList.remove('bg-gray-900', 'hover:bg-gray-800')
-                          setTimeout(() => {
-                            button.textContent = originalText
-                            button.classList.remove('bg-green-600', 'hover:bg-green-700')
-                        button.classList.add('bg-gray-900', 'hover:bg-gray-800')
-                          }, 2000)
+                      if (product && addItem) {
+                        try {
+                          addItem(product, quantity)
+                          // Show success message
+                          const button = document.querySelector('[data-add-to-cart]') as HTMLButtonElement
+                          if (button) {
+                            const originalText = button.textContent
+                            button.textContent = 'Added to Cart!'
+                            button.classList.add('bg-green-600', 'hover:bg-green-700')
+                        button.classList.remove('bg-gray-900', 'hover:bg-gray-800')
+                            setTimeout(() => {
+                              button.textContent = originalText
+                              button.classList.remove('bg-green-600', 'hover:bg-green-700')
+                          button.classList.add('bg-gray-900', 'hover:bg-gray-800')
+                            }, 2000)
+                          }
+                        } catch (error) {
+                          // AuthGuard will handle the authentication requirement
+                          console.log('Authentication required for cart operation')
                         }
                       }
                     }}
                     data-add-to-cart
-                    className="flex-1 rounded-md bg-gray-900 px-6 py-3 font-semibold text-white hover:bg-gray-800 transition-colors"
+                    className="flex-1 rounded-md bg-gray-900 px-4 sm:px-6 py-3 font-semibold text-white hover:bg-gray-800 transition-colors min-h-[48px]"
                   >
                 ADD TO CART
                   </button>
 
                   <button 
                     onClick={() => {
-                      if (product) {
-                        addItem(product, quantity)
-                        // Navigate to checkout immediately using hash-based routing
-                        window.location.hash = '#/checkout'
+                      if (product && addItem) {
+                        try {
+                          addItem(product, quantity)
+                          // Navigate to checkout immediately using hash-based routing
+                          window.location.hash = '#/user/checkout'
+                        } catch (error) {
+                          // AuthGuard will handle the authentication requirement
+                          console.log('Authentication required for purchase')
+                        }
                       }
                     }}
-                    className="flex-1 rounded-md bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 transition-colors"
+                    className="flex-1 rounded-md bg-blue-600 px-4 sm:px-6 py-3 font-semibold text-white hover:bg-blue-700 transition-colors min-h-[48px]"
                   >
                     BUY NOW
                   </button>
@@ -1067,7 +1084,7 @@ export default function ProductPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {getRelatedProducts(product).map((item, index) => (
                 <div key={index} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
-                <a href={`#/product/${item.slug}`}>
+                <a href={`#/user/product/${item.slug}`}>
                     <div className="relative">
                   <img 
                     src={item.image} 
@@ -1141,17 +1158,30 @@ export default function ProductPage() {
         </div>
       </main>
     </div>
+    </AuthGuard>
   )
 }
 
-function getRelatedProducts(currentProduct: Product | null) {
+function getRelatedProducts(currentProduct: Product | null): Array<{
+  slug: string
+  image: string
+  title: string
+  rating: number
+  reviewCount: number
+  originalPrice: string
+  price: string
+  discount: number
+}> {
   if (!currentProduct) return []
   
   // Return empty array - related products should be loaded via API in the component
   return []
 }
 
-function getFAQItems() {
+function getFAQItems(): Array<{
+  question: string
+  answer: string
+}> {
   // Return empty array - FAQ items should be loaded via API in the component
   return []
 }

@@ -41,7 +41,7 @@ const Invoice: React.FC = () => {
   const loadInvoices = async () => {
     try {
       setLoading(true);
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const response = await fetch(`${apiBase}/api/invoices`);
       if (response.ok) {
         const data = await response.json();
@@ -76,7 +76,7 @@ const Invoice: React.FC = () => {
   const handleCreateInvoice = async (invoiceData: Partial<Invoice>) => {
     setLoading(true);
     try {
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       // API call to create invoice
       const response = await fetch(`${apiBase}/api/invoices`, {
         method: 'POST',
@@ -99,7 +99,7 @@ const Invoice: React.FC = () => {
   const handleUpdateStatus = async (invoiceId: string, newStatus: string) => {
     setLoading(true);
     try {
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const response = await fetch(`${apiBase}/api/invoices/${invoiceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -121,7 +121,7 @@ const Invoice: React.FC = () => {
   const handleSendInvoice = async (invoiceId: string) => {
     setLoading(true);
     try {
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const response = await fetch(`${apiBase}/api/invoices/${invoiceId}/send`, {
         method: 'POST'
       });
@@ -140,19 +140,10 @@ const Invoice: React.FC = () => {
 
   const handleDownloadInvoice = async (invoiceId: string) => {
     try {
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
-      const response = await fetch(`${apiBase}/api/invoices/${invoiceId}/download`);
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `invoice-${invoiceId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const url = `${apiBase}/api/invoices/${invoiceId}/download`;
+      // Open invoice in new window for printing with Arctic Blue gradient
+      window.open(url, '_blank');
     } catch (error) {
       console.error('Error downloading invoice:', error);
     }

@@ -168,13 +168,13 @@ export default function ChairpersonMessage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="inline-block bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
             >
               Explore Products
             </a>
             <a 
-              href="#/about" 
+              href="#/user/about" 
               className="inline-block border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
             >
               Learn More About Us

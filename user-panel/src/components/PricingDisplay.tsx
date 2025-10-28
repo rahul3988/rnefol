@@ -9,6 +9,7 @@ interface PricingDisplayProps {
     }
   }
   csvProduct?: {
+    'MRP (₹)'?: string
     'MRP '?: string
     'MRP'?: string
     'website price'?: string
@@ -16,13 +17,15 @@ interface PricingDisplayProps {
   }
   className?: string
   showDiscount?: boolean
+  inline?: boolean // New prop to control whether to use inline elements
 }
 
 export function PricingDisplay({ 
   product, 
   csvProduct, 
   className = '', 
-  showDiscount = true 
+  showDiscount = true,
+  inline = false
 }: PricingDisplayProps) {
   // Priority: Admin panel data > CSV data > fallback
   const adminMrp = product?.details?.mrp
@@ -42,6 +45,20 @@ export function PricingDisplay({
   
   if (hasDiscount && showDiscount) {
     const discountPercent = Math.round(((cleanMrp - cleanWebsitePrice) / cleanMrp) * 100)
+    
+    if (inline) {
+      return (
+        <span className={`flex flex-col ${className}`}>
+          <span className="text-gray-500 line-through text-sm">₹{cleanMrp.toLocaleString()}</span>
+          <span className="text-xl font-bold text-green-600">₹{cleanWebsitePrice.toLocaleString()}</span>
+          {discountPercent > 0 && (
+            <span className="text-xs text-green-500">
+              {discountPercent}% OFF
+            </span>
+          )}
+        </span>
+      )
+    }
     
     return (
       <div className={`flex flex-col ${className}`}>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { MessageCircle, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Phone, Video, FileText, Image, Smile, CheckCircle } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { MessageCircle, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Phone, Video, FileText, Image, Smile, CheckCircle, XCircle } from 'lucide-react'
+import apiService from '../services/api'
 
 interface ChatMessage {
   id: string
@@ -48,197 +49,57 @@ interface WhatsAppAutomation {
 }
 
 export default function WhatsAppChat() {
-  const [activeSessions] = useState<ChatSession[]>([
-    {
-      id: '1',
-      customerName: 'Priya Sharma',
-      customerPhone: '+91 98765 43210',
-      customerEmail: 'priya.sharma@email.com',
-      status: 'active',
-      priority: 'medium',
-      assignedAgent: 'Agent Raj',
-      lastMessage: 'Thank you for your help!',
-      lastMessageTime: '2024-01-20 14:30',
-      messageCount: 12,
-      tags: ['skincare', 'order-issue'],
-      notes: 'Customer had issues with order delivery'
-    },
-    {
-      id: '2',
-      customerName: 'Amit Kumar',
-      customerPhone: '+91 87654 32109',
-      status: 'waiting',
-      priority: 'high',
-      lastMessage: 'I need help with my refund',
-      lastMessageTime: '2024-01-20 13:45',
-      messageCount: 5,
-      tags: ['refund', 'urgent'],
-      notes: 'Customer requesting refund for damaged product'
-    },
-    {
-      id: '3',
-      customerName: 'Sneha Patel',
-      customerPhone: '+91 76543 21098',
-      customerEmail: 'sneha.patel@email.com',
-      status: 'resolved',
-      priority: 'low',
-      assignedAgent: 'Agent Priya',
-      lastMessage: 'Issue resolved, thank you!',
-      lastMessageTime: '2024-01-20 12:15',
-      messageCount: 8,
-      tags: ['product-info', 'resolved'],
-      notes: 'Customer inquiry about product ingredients'
-    }
-  ])
-
-  const [currentSession, setCurrentSession] = useState<ChatSession | null>(activeSessions[0])
-  const [messages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Hi, I have an issue with my recent order',
-      timestamp: '2024-01-20 14:00',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '2',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'Hello Priya! I\'m here to help. Can you please share your order number?',
-      timestamp: '2024-01-20 14:01',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '3',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Sure, it\'s ORD-2024-001',
-      timestamp: '2024-01-20 14:02',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '4',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'Thank you! I can see your order was delivered yesterday. What seems to be the issue?',
-      timestamp: '2024-01-20 14:03',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '5',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'The product packaging was damaged and one of the items is missing',
-      timestamp: '2024-01-20 14:05',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '6',
-      sender: 'agent',
-      senderName: 'Agent Raj',
-      message: 'I\'m sorry to hear that. Let me arrange a replacement for the missing item and also provide you with a discount code for the inconvenience.',
-      timestamp: '2024-01-20 14:07',
-      type: 'text',
-      isRead: true
-    },
-    {
-      id: '7',
-      sender: 'customer',
-      senderName: 'Priya Sharma',
-      message: 'Thank you for your help!',
-      timestamp: '2024-01-20 14:30',
-      type: 'text',
-      isRead: true
-    }
-  ])
-
-  const [templates] = useState<WhatsAppTemplate[]>([
-    {
-      id: '1',
-      name: 'Order Confirmation',
-      category: 'Transactional',
-      content: 'Hi {{name}}, your order #{{order_id}} has been confirmed. Expected delivery: {{delivery_date}}',
-      variables: ['name', 'order_id', 'delivery_date'],
-      isApproved: true
-    },
-    {
-      id: '2',
-      name: 'Order Shipped',
-      category: 'Transactional',
-      content: 'Your order #{{order_id}} has been shipped! Track: {{tracking_link}}',
-      variables: ['order_id', 'tracking_link'],
-      isApproved: true
-    },
-    {
-      id: '3',
-      name: 'Welcome Message',
-      category: 'Marketing',
-      content: 'Welcome to Nefol! 🎉 Get 10% off your first order with code WELCOME10',
-      variables: [],
-      isApproved: true
-    },
-    {
-      id: '4',
-      name: 'Abandoned Cart',
-      category: 'Marketing',
-      content: 'Don\'t forget your skincare essentials! Complete your order: {{cart_link}}',
-      variables: ['cart_link'],
-      isApproved: false
-    }
-  ])
-
-  const [automations] = useState<WhatsAppAutomation[]>([
-    {
-      id: '1',
-      name: 'Order Confirmation',
-      trigger: 'Order Placed',
-      condition: 'All orders',
-      action: 'Send confirmation message',
-      isActive: true,
-      messagesSent: 150,
-      responseRate: 95.2
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment',
-      trigger: 'Cart Abandoned',
-      condition: 'Cart value > ₹500',
-      action: 'Send reminder message after 2 hours',
-      isActive: true,
-      messagesSent: 85,
-      responseRate: 78.5
-    },
-    {
-      id: '3',
-      name: 'Delivery Update',
-      trigger: 'Order Shipped',
-      condition: 'All shipped orders',
-      action: 'Send tracking message',
-      isActive: true,
-      messagesSent: 120,
-      responseRate: 88.3
-    },
-    {
-      id: '4',
-      name: 'Birthday Wishes',
-      trigger: 'Customer Birthday',
-      condition: 'Active customer',
-      action: 'Send birthday message',
-      isActive: false,
-      messagesSent: 0,
-      responseRate: 0
-    }
-  ])
-
+  const [activeSessions, setActiveSessions] = useState<ChatSession[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
+  const [automations, setAutomations] = useState<WhatsAppAutomation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [newMessage, setNewMessage] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
   const [showAutomations, setShowAutomations] = useState(false)
+  const [showTestModal, setShowTestModal] = useState(false)
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false)
+  const [showCreateAutomation, setShowCreateAutomation] = useState(false)
+  const [testPhoneNumber, setTestPhoneNumber] = useState('')
+  const [testMessage, setTestMessage] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [sendResult, setSendResult] = useState<any>(null)
+  const [newTemplateName, setNewTemplateName] = useState('')
+  const [newTemplateContent, setNewTemplateContent] = useState('')
+  const [newAutoName, setNewAutoName] = useState('')
+  const [newAutoTrigger, setNewAutoTrigger] = useState('')
+
+  useEffect(() => {
+    loadWhatsAppData()
+  }, [])
+
+  const loadWhatsAppData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [sessionsData, templatesData, automationsData] = await Promise.all([
+        apiService.getWhatsAppChats().catch(() => [] as ChatSession[]),
+        apiService.getWhatsAppTemplates().catch(() => [] as WhatsAppTemplate[]),
+        apiService.getWhatsAppAutomations().catch(() => [] as WhatsAppAutomation[])
+      ])
+      
+      const sessionsArray = Array.isArray(sessionsData) ? sessionsData : []
+      setActiveSessions(sessionsArray)
+      setTemplates(Array.isArray(templatesData) ? templatesData : [])
+      setAutomations(Array.isArray(automationsData) ? automationsData : [])
+      
+      if (sessionsArray && sessionsArray.length > 0) {
+        setCurrentSession(sessionsArray[0])
+      }
+    } catch (err) {
+      console.error('Failed to load WhatsApp data:', err)
+      setError('Failed to load WhatsApp data')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const totalStats = {
     totalSessions: activeSessions.length,
@@ -275,8 +136,130 @@ export default function WhatsAppChat() {
     }
   }
 
+  const handleTestSendMessage = async () => {
+    if (!testPhoneNumber.trim() || !testMessage.trim()) {
+      alert('Please enter both phone number and message')
+      return
+    }
+
+    setSendingMessage(true)
+    setSendResult(null)
+
+    try {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://localhost:4000`
+      
+      const response = await fetch(`${apiBase}/api/whatsapp-chat/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: testPhoneNumber,
+          message: testMessage
+        })
+      })
+
+      const data = await response.json()
+      setSendResult(data)
+
+      if (response.ok) {
+        alert('✅ Message sent successfully!')
+        setTestPhoneNumber('')
+        setTestMessage('')
+      } else {
+        alert(`❌ Failed to send message: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Failed to send WhatsApp message:', error)
+      setSendResult({ error: 'Network error: ' + (error as Error).message })
+      alert('❌ Network error occurred')
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  const handleCreateTemplate = () => {
+    if (!newTemplateName.trim() || !newTemplateContent.trim()) {
+      alert('Please enter template name and content')
+      return
+    }
+
+    const newTemplate = {
+      id: Date.now().toString(),
+      name: newTemplateName,
+      category: 'Custom',
+      content: newTemplateContent,
+      variables: [],
+      isApproved: false
+    }
+
+    setTemplates([...templates, newTemplate])
+    setShowCreateTemplate(false)
+    setNewTemplateName('')
+    setNewTemplateContent('')
+    alert('✅ Template created! (Local - not saved to database)')
+  }
+
+  const handleCreateAutomation = () => {
+    if (!newAutoName.trim() || !newAutoTrigger.trim()) {
+      alert('Please enter automation name and trigger')
+      return
+    }
+
+    const newAuto = {
+      id: Date.now().toString(),
+      name: newAutoName,
+      trigger: newAutoTrigger,
+      condition: 'Always',
+      action: 'Send WhatsApp Message',
+      isActive: false,
+      messagesSent: 0,
+      responseRate: 0
+    }
+
+    setAutomations([...automations, newAuto])
+    setShowCreateAutomation(false)
+    setNewAutoName('')
+    setNewAutoTrigger('')
+    alert('✅ Automation created! (Local - not saved to database)')
+  }
+
   const handleSessionSelect = (session: ChatSession) => {
     setCurrentSession(session)
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading WhatsApp data...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadWhatsAppData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -292,6 +275,20 @@ export default function WhatsAppChat() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={() => setShowTestModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Send className="h-4 w-4" />
+            <span>Test WhatsApp</span>
+          </button>
+          <button
+            onClick={loadWhatsAppData}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
           <button
             onClick={() => setShowTemplates(true)}
             className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2"
@@ -362,7 +359,13 @@ export default function WhatsAppChat() {
             </h2>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {activeSessions.map((session) => (
+            {activeSessions.length === 0 ? (
+              <div className="p-8 text-center">
+                <MessageCircle className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                <p className="text-slate-600 dark:text-slate-400">No chat sessions available</p>
+              </div>
+            ) : (
+              activeSessions.map((session) => (
               <div
                 key={session.id}
                 onClick={() => handleSessionSelect(session)}
@@ -403,7 +406,8 @@ export default function WhatsAppChat() {
                   </p>
                 )}
               </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -431,13 +435,15 @@ export default function WhatsAppChat() {
                     </button>
                   </div>
                 </div>
-                <div className="flex space-x-2 mt-2">
-                  {currentSession.tags.map((tag, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+                {currentSession.tags && currentSession.tags.length > 0 && (
+                  <div className="flex space-x-2 mt-2">
+                    {currentSession.tags.map((tag, index) => (
+                      <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Messages */}
@@ -517,12 +523,20 @@ export default function WhatsAppChat() {
           <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
             WhatsApp Templates
           </h2>
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+          <button 
+            onClick={() => setShowCreateTemplate(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
             Create Template
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {templates.map((template) => (
+        {templates.length === 0 ? (
+          <div className="text-center py-8">
+            <FileText className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <p className="text-slate-600 dark:text-slate-400">No templates available</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {templates.map((template) => (
             <div key={template.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold text-slate-900 dark:text-slate-100">
@@ -552,7 +566,8 @@ export default function WhatsAppChat() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* WhatsApp Automations */}
@@ -561,12 +576,20 @@ export default function WhatsAppChat() {
           <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
             WhatsApp Automations
           </h2>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button 
+            onClick={() => setShowCreateAutomation(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             Create Automation
           </button>
         </div>
-        <div className="space-y-4">
-          {automations.map((automation) => (
+        {automations.length === 0 ? (
+          <div className="text-center py-8">
+            <Plus className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <p className="text-slate-600 dark:text-slate-400">No automations available</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {automations.map((automation) => (
             <div key={automation.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-3">
@@ -622,7 +645,8 @@ export default function WhatsAppChat() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* WhatsApp Best Practices */}
@@ -658,6 +682,201 @@ export default function WhatsAppChat() {
           </div>
         </div>
       </div>
+
+      {/* Create Template Modal */}
+      {showCreateTemplate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Create WhatsApp Template</h2>
+              <button onClick={() => setShowCreateTemplate(false)} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Template Name</label>
+                <input
+                  type="text"
+                  value={newTemplateName}
+                  onChange={(e) => setNewTemplateName(e.target.value)}
+                  placeholder="e.g., Welcome Message"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Template Content</label>
+                <textarea
+                  value={newTemplateContent}
+                  onChange={(e) => setNewTemplateContent(e.target.value)}
+                  placeholder="Enter your template message..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleCreateTemplate}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700"
+                >
+                  Create Template
+                </button>
+                <button
+                  onClick={() => setShowCreateTemplate(false)}
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Automation Modal */}
+      {showCreateAutomation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Create WhatsApp Automation</h2>
+              <button onClick={() => setShowCreateAutomation(false)} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Automation Name</label>
+                <input
+                  type="text"
+                  value={newAutoName}
+                  onChange={(e) => setNewAutoName(e.target.value)}
+                  placeholder="e.g., Order Confirmation"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Trigger</label>
+                <input
+                  type="text"
+                  value={newAutoTrigger}
+                  onChange={(e) => setNewAutoTrigger(e.target.value)}
+                  placeholder="e.g., When order is placed"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleCreateAutomation}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700"
+                >
+                  Create Automation
+                </button>
+                <button
+                  onClick={() => setShowCreateAutomation(false)}
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test WhatsApp Modal */}
+      {showTestModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Test WhatsApp Message
+              </h2>
+              <button
+                onClick={() => setShowTestModal(false)}
+                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Phone Number (with country code)
+                </label>
+                <input
+                  type="text"
+                  value={testPhoneNumber}
+                  onChange={(e) => setTestPhoneNumber(e.target.value)}
+                  placeholder="917355384939"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Include country code (e.g., 91 for India, 1 for USA)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Message
+                </label>
+                <textarea
+                  value={testMessage}
+                  onChange={(e) => setTestMessage(e.target.value)}
+                  placeholder="Enter your test message here..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+
+              {sendResult && (
+                <div className={`p-3 rounded-lg ${
+                  sendResult.success 
+                    ? 'bg-green-50 dark:bg-green-900 text-green-800 dark:text-green-200' 
+                    : 'bg-red-50 dark:bg-red-900 text-red-800 dark:text-red-200'
+                }`}>
+                  <pre className="text-xs overflow-auto">{JSON.stringify(sendResult, null, 2)}</pre>
+                </div>
+              )}
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleTestSendMessage}
+                  disabled={sendingMessage}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors disabled:bg-slate-400 flex items-center justify-center space-x-2"
+                >
+                  {sendingMessage ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      <span>Send Message</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowTestModal(false)
+                    setSendResult(null)
+                  }}
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

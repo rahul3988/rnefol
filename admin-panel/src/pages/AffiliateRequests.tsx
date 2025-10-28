@@ -73,6 +73,8 @@ export default function AffiliateRequests() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState<'approve' | 'reject' | 'view'>('view')
+  const [regeneratingCode, setRegeneratingCode] = useState<number | null>(null)
+  const [recentlyRegenerated, setRecentlyRegenerated] = useState<Set<number>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'status'>('date')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -133,80 +135,13 @@ export default function AffiliateRequests() {
         })
       } else {
         console.error('Failed to fetch applications:', data.message)
-        // Fallback to mock data for development
-        const mockApplications: AffiliateApplication[] = [
-          {
-            id: 1,
-            name: 'John Doe',
-            email: 'john@example.com',
-            phone: '+1234567890',
-            instagram: '@johndoe',
-            youtube: 'https://youtube.com/@johndoe',
-            followers: '10k-25k',
-            platform: 'instagram',
-            experience: '2 years of affiliate marketing experience with skincare brands',
-            why_join: 'I love promoting natural skincare products and have a dedicated audience',
-            expected_sales: '10k-25k',
-            house_number: '123',
-            street: 'Main Street',
-            road: 'MG Road',
-            city: 'Mumbai',
-            pincode: '400001',
-            state: 'Maharashtra',
-            agree_terms: true,
-            status: 'pending',
-            application_date: new Date().toISOString()
-          },
-          {
-            id: 2,
-            name: 'Priya Sharma',
-            email: 'priya@example.com',
-            phone: '+9876543210',
-            instagram: '@priyasharma',
-            followers: '25k-50k',
-            platform: 'instagram',
-            experience: '3 years of beauty influencer experience',
-            why_join: 'Passionate about natural skincare and have built trust with my audience',
-            expected_sales: '25k-50k',
-            house_number: '456',
-            street: 'Park Street',
-            road: 'Park Street',
-            city: 'Delhi',
-            pincode: '110001',
-            state: 'Delhi',
-            agree_terms: true,
-            status: 'pending',
-            application_date: new Date(Date.now() - 86400000).toISOString()
-          },
-          {
-            id: 3,
-            name: 'Raj Kumar',
-            email: 'raj@example.com',
-            phone: '+9123456789',
-            youtube: 'https://youtube.com/@rajkumar',
-            followers: '50k+',
-            platform: 'youtube',
-            experience: '5 years of content creation and affiliate marketing',
-            why_join: 'Want to promote quality skincare products to my subscribers',
-            expected_sales: '50k+',
-            house_number: '789',
-            street: 'Tech Park',
-            road: 'IT Road',
-            city: 'Bangalore',
-            pincode: '560001',
-            state: 'Karnataka',
-            agree_terms: true,
-            status: 'pending',
-            application_date: new Date(Date.now() - 172800000).toISOString()
-          }
-        ]
-        setApplications(mockApplications)
-        setTotalPages(1)
+        setApplications([])
+        setTotalPages(0)
         setStats({
-          total: mockApplications.length,
-          pending: mockApplications.filter(app => app.status === 'pending').length,
-          approved: mockApplications.filter(app => app.status === 'approved').length,
-          rejected: mockApplications.filter(app => app.status === 'rejected').length
+          total: 0,
+          pending: 0,
+          approved: 0,
+          rejected: 0
         })
       }
     } catch (error) {
@@ -278,6 +213,79 @@ export default function AffiliateRequests() {
     } catch (error) {
       console.error('Error rejecting application:', error)
       alert('Error rejecting application. Please try again.')
+    }
+  }
+
+  const handleRegenerateCode = async (applicationId: number) => {
+    if (!confirm('Are you sure you want to regenerate the verification code? This will invalidate the current code and the affiliate partner will need to verify again with the new code.')) {
+      return
+    }
+
+    try {
+      setRegeneratingCode(applicationId)
+      
+      // First, we need to get the affiliate partner ID from the application
+      const response = await fetch(`/api/admin/affiliate-applications/${applicationId}`)
+      const appData = await response.json()
+      
+      if (!response.ok) {
+        alert(appData.error || 'Failed to get application details')
+        return
+      }
+
+      // Find the affiliate partner record
+      const partnerResponse = await fetch(`/api/admin/affiliate-partners?applicationId=${applicationId}`)
+      const partnerData = await partnerResponse.json()
+      
+      if (!partnerResponse.ok || !partnerData.partners || partnerData.partners.length === 0) {
+        alert('Affiliate partner record not found')
+        return
+      }
+
+      const partnerId = partnerData.partners[0].id
+
+      // Regenerate the verification code
+      const regenerateResponse = await fetch(`/api/admin/affiliate-partners/${partnerId}/regenerate-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      const regenerateData = await regenerateResponse.json()
+      
+      if (regenerateResponse.ok && regenerateData.verificationCode) {
+        // Update the local state with the new verification code
+        setApplications(prevApplications => 
+          prevApplications.map(app => 
+            app.id === applicationId 
+              ? { ...app, verification_code: regenerateData.verificationCode }
+              : app
+          )
+        )
+        
+        // Add visual feedback for recently regenerated code
+        setRecentlyRegenerated(prev => new Set(prev).add(applicationId))
+        
+        // Remove the highlight after 3 seconds
+        setTimeout(() => {
+          setRecentlyRegenerated(prev => {
+            const newSet = new Set(prev)
+            newSet.delete(applicationId)
+            return newSet
+          })
+        }, 3000)
+        
+        // Show success message
+        alert(`New verification code generated successfully!\n\nNew Code: ${regenerateData.verificationCode}\n\nThe code has been updated in the UI and is ready to copy.`)
+      } else {
+        alert(regenerateData.error || regenerateData.message || 'Failed to regenerate verification code')
+      }
+    } catch (error) {
+      console.error('Error regenerating verification code:', error)
+      alert('Error regenerating verification code. Please try again.')
+    } finally {
+      setRegeneratingCode(null)
     }
   }
 
@@ -652,13 +660,23 @@ export default function AffiliateRequests() {
                         )}
                         
                         {application.verification_code && (
-                          <button
-                            onClick={() => copyToClipboard(application.verification_code!)}
-                            className="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300"
-                            title="Copy Verification Code"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => copyToClipboard(application.verification_code!)}
+                              className="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300"
+                              title="Copy Verification Code"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRegenerateCode(application.id)}
+                              disabled={regeneratingCode === application.id}
+                              className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300 disabled:opacity-50"
+                              title="Regenerate Verification Code"
+                            >
+                              <RefreshCw className={`h-4 w-4 ${regeneratingCode === application.id ? 'animate-spin' : ''}`} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -717,23 +735,66 @@ export default function AffiliateRequests() {
                               
                               {/* Verification Code Section */}
                               {application.verification_code && (
-                                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                <div className={`mt-4 p-3 rounded-lg border transition-all duration-500 ${
+                                  recentlyRegenerated.has(application.id) 
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700 shadow-lg ring-2 ring-blue-200 dark:ring-blue-800' 
+                                    : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                                }`}>
                                   <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-semibold text-green-800 dark:text-green-200">Verification Code:</span>
-                                    <button
-                                      onClick={() => copyToClipboard(application.verification_code!)}
-                                      className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 flex items-center gap-1"
-                                    >
-                                      <Copy className="h-4 w-4" />
-                                      Copy
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-sm font-semibold ${
+                                        recentlyRegenerated.has(application.id)
+                                          ? 'text-blue-800 dark:text-blue-200'
+                                          : 'text-green-800 dark:text-green-200'
+                                      }`}>
+                                        Verification Code:
+                                      </span>
+                                      {recentlyRegenerated.has(application.id) && (
+                                        <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full animate-pulse">
+                                          Just Updated!
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => copyToClipboard(application.verification_code!)}
+                                        className={`flex items-center gap-1 ${
+                                          recentlyRegenerated.has(application.id)
+                                            ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200'
+                                            : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200'
+                                        }`}
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                        Copy
+                                      </button>
+                                      <button
+                                        onClick={() => handleRegenerateCode(application.id)}
+                                        disabled={regeneratingCode === application.id}
+                                        className="text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-200 flex items-center gap-1 disabled:opacity-50"
+                                      >
+                                        <RefreshCw className={`h-4 w-4 ${regeneratingCode === application.id ? 'animate-spin' : ''}`} />
+                                        Regenerate
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div className="bg-white dark:bg-gray-800 rounded p-2 border border-green-300 dark:border-green-700">
-                                    <code className="text-lg font-mono text-green-900 dark:text-green-100 tracking-wider">
+                                  <div className={`rounded p-2 border transition-colors duration-500 ${
+                                    recentlyRegenerated.has(application.id)
+                                      ? 'bg-white dark:bg-gray-800 border-blue-300 dark:border-blue-700'
+                                      : 'bg-white dark:bg-gray-800 border-green-300 dark:border-green-700'
+                                  }`}>
+                                    <code className={`text-lg font-mono tracking-wider transition-colors duration-500 ${
+                                      recentlyRegenerated.has(application.id)
+                                        ? 'text-blue-900 dark:text-blue-100'
+                                        : 'text-green-900 dark:text-green-100'
+                                    }`}>
                                       {application.verification_code}
                                     </code>
                                   </div>
-                                  <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                                  <p className={`text-xs mt-1 transition-colors duration-500 ${
+                                    recentlyRegenerated.has(application.id)
+                                      ? 'text-blue-700 dark:text-blue-300'
+                                      : 'text-green-700 dark:text-green-300'
+                                  }`}>
                                     Send this 20-digit code to the affiliate partner for account verification
                                   </p>
                                 </div>

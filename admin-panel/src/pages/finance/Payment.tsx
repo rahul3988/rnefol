@@ -52,121 +52,51 @@ const Payment: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
-  // Mock data for demonstration
+  // Fetch payment data from API
   useEffect(() => {
-    const mockPaymentMethods: PaymentMethod[] = [
-      {
-        id: '1',
-        name: 'Credit Card',
-        type: 'credit_card',
-        isActive: true,
-        processingFee: 2.5,
-        minAmount: 10,
-        maxAmount: 10000,
-        supportedRegions: ['India', 'USA', 'UK'],
-        createdAt: '2024-01-01'
-      },
-      {
-        id: '2',
-        name: 'UPI',
-        type: 'upi',
-        isActive: true,
-        processingFee: 0,
-        minAmount: 1,
-        maxAmount: 100000,
-        supportedRegions: ['India'],
-        createdAt: '2024-01-01'
-      },
-      {
-        id: '3',
-        name: 'Net Banking',
-        type: 'netbanking',
-        isActive: true,
-        processingFee: 1.5,
-        minAmount: 10,
-        maxAmount: 50000,
-        supportedRegions: ['India'],
-        createdAt: '2024-01-01'
-      },
-      {
-        id: '4',
-        name: 'Cash on Delivery',
-        type: 'cod',
-        isActive: true,
-        processingFee: 0,
-        minAmount: 100,
-        maxAmount: 5000,
-        supportedRegions: ['India'],
-        createdAt: '2024-01-01'
-      }
-    ];
+    const fetchPaymentData = async () => {
+      setLoading(true);
+      try {
+        const [methodsResponse, transactionsResponse, gatewaysResponse] = await Promise.all([
+          fetch('/api/payments/methods'),
+          fetch('/api/payments/transactions'),
+          fetch('/api/payments/gateways')
+        ]);
 
-    const mockTransactions: PaymentTransaction[] = [
-      {
-        id: '1',
-        transactionId: 'TXN-2024-001',
-        orderId: 'ORD-001',
-        customerName: 'John Doe',
-        amount: 165.00,
-        method: 'Credit Card',
-        status: 'completed',
-        gateway: 'Razorpay',
-        createdAt: '2024-01-15T10:30:00Z',
-        processedAt: '2024-01-15T10:31:00Z'
-      },
-      {
-        id: '2',
-        transactionId: 'TXN-2024-002',
-        orderId: 'ORD-002',
-        customerName: 'Jane Smith',
-        amount: 220.00,
-        method: 'UPI',
-        status: 'completed',
-        gateway: 'Razorpay',
-        createdAt: '2024-01-14T14:20:00Z',
-        processedAt: '2024-01-14T14:21:00Z'
-      },
-      {
-        id: '3',
-        transactionId: 'TXN-2024-003',
-        orderId: 'ORD-003',
-        customerName: 'Mike Johnson',
-        amount: 330.00,
-        method: 'Net Banking',
-        status: 'failed',
-        gateway: 'Razorpay',
-        createdAt: '2024-01-13T16:45:00Z'
-      }
-    ];
+        if (methodsResponse.ok) {
+          const methodsData = await methodsResponse.json();
+          setPaymentMethods(methodsData.methods || []);
+        } else {
+          console.error('Failed to fetch payment methods');
+          setPaymentMethods([]);
+        }
 
-    const mockGateways: PaymentGateway[] = [
-      {
-        id: '1',
-        name: 'Razorpay',
-        type: 'razorpay',
-        isActive: true,
-        apiKey: 'rzp_test_****',
-        secretKey: '****',
-        webhookUrl: 'https://yourstore.com/webhook/razorpay',
-        supportedMethods: ['credit_card', 'upi', 'netbanking'],
-        createdAt: '2024-01-01'
-      },
-      {
-        id: '2',
-        name: 'Stripe',
-        type: 'stripe',
-        isActive: false,
-        apiKey: 'sk_test_****',
-        secretKey: '****',
-        webhookUrl: 'https://yourstore.com/webhook/stripe',
-        supportedMethods: ['credit_card', 'debit_card'],
-        createdAt: '2024-01-01'
-      }
-    ];
+        if (transactionsResponse.ok) {
+          const transactionsData = await transactionsResponse.json();
+          setTransactions(transactionsData.transactions || []);
+        } else {
+          console.error('Failed to fetch transactions');
+          setTransactions([]);
+        }
 
-    setPaymentMethods(mockPaymentMethods);
-    setTransactions(mockTransactions);
-    setGateways(mockGateways);
+        if (gatewaysResponse.ok) {
+          const gatewaysData = await gatewaysResponse.json();
+          setGateways(gatewaysData.gateways || []);
+        } else {
+          console.error('Failed to fetch gateways');
+          setGateways([]);
+        }
+      } catch (error) {
+        console.error('Error fetching payment data:', error);
+        setPaymentMethods([]);
+        setTransactions([]);
+        setGateways([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPaymentData();
   }, []);
 
   const getStatusColor = (status: string) => {

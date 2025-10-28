@@ -8,7 +8,7 @@ class SocketService {
   connect() {
     if (this.socket?.connected) return
 
-    this.socket = io(`http://${window.location.hostname}:4000`, {
+    this.socket = io('http://192.168.1.66:4000', {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: true,

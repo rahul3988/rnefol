@@ -29,7 +29,7 @@ export default function Marketing() {
   const [activeTab, setActiveTab] = useState<'campaigns' | 'templates' | 'audiences'>('campaigns')
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   useEffect(() => {
     loadCampaigns()
@@ -40,11 +40,15 @@ export default function Marketing() {
     try {
       setLoading(true)
       const res = await fetch(`${apiBase}/api/marketing/campaigns`)
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
       const data = await res.json()
-      setCampaigns(data)
+      // Ensure data is an array
+      setCampaigns(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to load campaigns:', error)
-      setCampaigns([])
+      setCampaigns([]) // Set empty array on error
     } finally {
       setLoading(false)
     }
@@ -53,11 +57,15 @@ export default function Marketing() {
   const loadTemplates = async () => {
     try {
       const res = await fetch(`${apiBase}/api/marketing/templates`)
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
       const data = await res.json()
-      setTemplates(data)
+      // Ensure data is an array
+      setTemplates(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to load templates:', error)
-      setTemplates([])
+      setTemplates([]) // Set empty array on error
     }
   }
 

@@ -20,17 +20,23 @@ export default function Shipments() {
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   const load = async () => {
     try {
       setLoading(true)
       setError('')
       const res = await fetch(`${apiBase}/api/shiprocket/shipments`)
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
       const data = await res.json()
-      setShipments(data)
+      // Ensure data is an array
+      setShipments(Array.isArray(data) ? data : [])
     } catch (e) {
+      console.error('Failed to load shipments:', e)
       setError('Failed to load shipments')
+      setShipments([]) // Set empty array on error
     } finally {
       setLoading(false)
     }

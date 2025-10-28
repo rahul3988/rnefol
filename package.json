@@ -1,8 +1,8 @@
 {
   "name": "nefol-monorepo",
-  "private": true,
   "version": "0.1.0",
-  "description": "Nefol monorepo: user-panel, admin-panel, backend, common",
+  "description": "Nefol - A comprehensive e-commerce platform with admin panel, user panel, and backend services",
+  "private": true,
   "workspaces": [
     "admin-panel",
     "backend",
@@ -10,32 +10,62 @@
     "user-panel"
   ],
   "scripts": {
-    "start:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-all.ps1",
-    "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-all.ps1",
-    "dev": "concurrently -n user,admin,api -c blue,magenta,green \"pnpm --filter user-panel dev\" \"pnpm --filter admin-panel dev\" \"pnpm --filter backend dev\"",
-    "dev:user": "pnpm --filter user-panel dev",
-    "dev:admin": "pnpm --filter admin-panel dev",
-    "dev:api": "pnpm --filter backend dev",
-    "build:all": "pnpm --filter user-panel build && pnpm --filter admin-panel build && pnpm --filter backend build",
-    "build:user": "pnpm --filter user-panel build",
-    "build:admin": "pnpm --filter admin-panel build",
-    "build:backend": "pnpm --filter backend build",
-    "install:all": "pnpm install",
-    "clean": "pnpm --filter user-panel clean && pnpm --filter admin-panel clean && pnpm --filter backend clean",
-    "lint": "pnpm --filter user-panel lint && pnpm --filter admin-panel lint && pnpm --filter backend lint",
-    "format": "echo 'add formatter later'",
-    "test": "pnpm --filter user-panel test && pnpm --filter admin-panel test && pnpm --filter backend test",
-    "share": ".\\scripts\\share-app-simple.bat",
-    "share:user": ".\\scripts\\share-app-simple.bat",
-    "share:admin": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel admin",
-    "share:all": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel all",
-    "share:prod": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\share-app.ps1 -Panel user -Production"
-  },
-  "devDependencies": {
-    "concurrently": "^9.0.1",
-    "puppeteer": "^24.25.0"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:admin\" \"npm run dev:user\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:admin": "cd admin-panel && npm run dev",
+    "dev:user": "cd user-panel && npm run dev",
+    "build": "npm run build:backend && npm run build:admin && npm run build:user",
+    "build:backend": "cd backend && npm run build",
+    "build:admin": "cd admin-panel && npm run build",
+    "build:user": "cd user-panel && npm run build",
+    "start": "concurrently \"npm run start:backend\" \"npm run preview:admin\" \"npm run preview:user\"",
+    "start:backend": "cd backend && npm run start",
+    "preview:admin": "cd admin-panel && npm run preview",
+    "preview:user": "cd user-panel && npm run preview",
+    "test": "npm run test:admin",
+    "test:admin": "cd admin-panel && npm run test",
+    "test:admin:syntax": "cd admin-panel && npm run test:syntax",
+    "test:admin:build": "cd admin-panel && npm run test:build",
+    "migrate": "cd backend && npm run migrate",
+    "reset-db": "cd backend && npm run reset-db",
+    "install:all": "npm install && npm run install:workspaces",
+    "install:workspaces": "npm install --workspaces",
+    "clean": "npm run clean:node-modules && npm run clean:dist",
+    "clean:node-modules": "rm -rf node_modules && rm -rf */node_modules",
+    "clean:dist": "rm -rf */dist",
+    "lint": "npm run lint:workspaces",
+    "lint:workspaces": "npm run lint --workspaces",
+    "type-check": "npm run type-check:workspaces",
+    "type-check:workspaces": "npm run type-check --workspaces"
   },
   "dependencies": {
     "axios": "^1.12.2"
-  }
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/nefol.git"
+  },
+  "keywords": [
+    "e-commerce",
+    "monorepo",
+    "react",
+    "typescript",
+    "express",
+    "socket.io",
+    "admin-panel",
+    "user-panel"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/your-username/nefol/issues"
+  },
+  "homepage": "https://github.com/your-username/nefol#readme"
 }

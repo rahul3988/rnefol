@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Users, Target, Filter, Plus, Edit, Trash2, Eye, BarChart3, TrendingUp, Calendar, MapPin, ShoppingCart, Heart, Star, Clock } from 'lucide-react'
+import apiService from '../services/api'
 
 interface CustomerSegment {
   id: string
@@ -38,120 +39,29 @@ interface Customer {
 }
 
 export default function CustomerSegmentation() {
-  const [segments] = useState<CustomerSegment[]>([
-    {
-      id: '1',
-      name: 'VIP Customers',
-      description: 'High-value customers with multiple purchases',
-      criteria: [
-        { field: 'total_spent', operator: 'greater_than', value: 10000 },
-        { field: 'total_orders', operator: 'greater_than', value: 5 }
-      ],
-      customerCount: 125,
-      lastUpdated: '2024-01-20',
-      isActive: true,
-      tags: ['high-value', 'loyal'],
-      stats: {
-        totalOrders: 1250,
-        totalRevenue: 2500000,
-        averageOrderValue: 2000,
-        lastPurchaseDate: '2024-01-15'
-      }
-    },
-    {
-      id: '2',
-      name: 'New Customers',
-      description: 'Recently registered customers',
-      criteria: [
-        { field: 'registration_date', operator: 'greater_than', value: '2024-01-01' },
-        { field: 'total_orders', operator: 'less_than', value: 3 }
-      ],
-      customerCount: 450,
-      lastUpdated: '2024-01-20',
-      isActive: true,
-      tags: ['new', 'potential'],
-      stats: {
-        totalOrders: 180,
-        totalRevenue: 360000,
-        averageOrderValue: 2000,
-        lastPurchaseDate: '2024-01-18'
-      }
-    },
-    {
-      id: '3',
-      name: 'At-Risk Customers',
-      description: 'Customers who haven\'t purchased recently',
-      criteria: [
-        { field: 'last_order_date', operator: 'less_than', value: '2023-12-01' },
-        { field: 'total_orders', operator: 'greater_than', value: 1 }
-      ],
-      customerCount: 320,
-      lastUpdated: '2024-01-20',
-      isActive: true,
-      tags: ['at-risk', 'retention'],
-      stats: {
-        totalOrders: 640,
-        totalRevenue: 1280000,
-        averageOrderValue: 2000,
-        lastPurchaseDate: '2023-11-15'
-      }
-    },
-    {
-      id: '4',
-      name: 'Skincare Enthusiasts',
-      description: 'Customers interested in skincare products',
-      criteria: [
-        { field: 'category_preference', operator: 'contains', value: 'skincare' },
-        { field: 'total_orders', operator: 'greater_than', value: 2 }
-      ],
-      customerCount: 280,
-      lastUpdated: '2024-01-20',
-      isActive: true,
-      tags: ['skincare', 'engaged'],
-      stats: {
-        totalOrders: 840,
-        totalRevenue: 1680000,
-        averageOrderValue: 2000,
-        lastPurchaseDate: '2024-01-16'
-      }
-    }
-  ])
+  const [segments, setSegments] = useState<CustomerSegment[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [customers] = useState<Customer[]>([
-    {
-      id: '1',
-      name: 'Priya Sharma',
-      email: 'priya.sharma@email.com',
-      segment: 'VIP Customers',
-      totalOrders: 12,
-      totalSpent: 25000,
-      lastOrderDate: '2024-01-15',
-      location: 'Mumbai',
-      tags: ['high-value', 'loyal']
-    },
-    {
-      id: '2',
-      name: 'Amit Kumar',
-      email: 'amit.kumar@email.com',
-      segment: 'New Customers',
-      totalOrders: 2,
-      totalSpent: 4000,
-      lastOrderDate: '2024-01-18',
-      location: 'Delhi',
-      tags: ['new', 'potential']
-    },
-    {
-      id: '3',
-      name: 'Sneha Patel',
-      email: 'sneha.patel@email.com',
-      segment: 'Skincare Enthusiasts',
-      totalOrders: 8,
-      totalSpent: 16000,
-      lastOrderDate: '2024-01-16',
-      location: 'Bangalore',
-      tags: ['skincare', 'engaged']
+  useEffect(() => {
+    loadSegmentsData()
+  }, [])
+
+  const loadSegmentsData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getCustomerSegments().catch(() => [])
+      setSegments(Array.isArray(data) ? data : [])
+      setCustomers([]) // Customers would be loaded per segment
+    } catch (err) {
+      console.error('Failed to load segments data:', err)
+      setError('Failed to load segments data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   const [selectedSegment, setSelectedSegment] = useState<CustomerSegment | null>(null)
   const [showCreateSegment, setShowCreateSegment] = useState(false)
@@ -219,6 +129,40 @@ export default function CustomerSegmentation() {
     { id: 'analytics', label: 'Analytics', icon: BarChart3 }
   ]
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading segments...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadSegmentsData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
       {/* Header */}
@@ -231,13 +175,22 @@ export default function CustomerSegmentation() {
             Create targeted customer segments for personalized marketing
           </p>
         </div>
-        <button
-          onClick={handleCreateSegment}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Create Segment</span>
-        </button>
+        <div className="flex space-x-3">
+          <button
+            onClick={loadSegmentsData}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Target className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={handleCreateSegment}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Segment</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}

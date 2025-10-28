@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 type Form = {
   id: number
@@ -9,41 +9,60 @@ type Form = {
   createdAt: string
 }
 
+type Submission = {
+  form: string
+  name: string
+  email: string
+  message: string
+  submittedAt: string
+}
+
 export default function Forms() {
-  const [forms, setForms] = useState<Form[]>([
-    {
-      id: 1,
-      name: 'Contact Us',
-      type: 'contact',
-      submissions: 45,
-      status: 'active',
-      createdAt: '2024-01-15'
-    },
-    {
-      id: 2,
-      name: 'Newsletter Signup',
-      type: 'newsletter',
-      submissions: 234,
-      status: 'active',
-      createdAt: '2024-01-10'
-    },
-    {
-      id: 3,
-      name: 'Product Feedback',
-      type: 'feedback',
-      submissions: 89,
-      status: 'active',
-      createdAt: '2024-01-05'
-    },
-    {
-      id: 4,
-      name: 'Customer Survey',
-      type: 'survey',
-      submissions: 156,
-      status: 'inactive',
-      createdAt: '2023-12-20'
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [forms, setForms] = useState<Form[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
+
+  // Fetch forms and submissions from API
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        setError('')
+        
+        const [formsRes, submissionsRes] = await Promise.all([
+          fetch(`${apiBase}/api/forms`),
+          fetch(`${apiBase}/api/forms/submissions`)
+        ])
+
+        if (formsRes.ok) {
+          const formsData = await formsRes.json()
+          setForms(formsData.forms || [])
+        } else {
+          console.error('Failed to fetch forms')
+          setForms([])
+        }
+
+        if (submissionsRes.ok) {
+          const submissionsData = await submissionsRes.json()
+          setSubmissions(submissionsData.submissions || [])
+        } else {
+          console.error('Failed to fetch submissions')
+          setSubmissions([])
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error)
+        setError('Failed to load forms data')
+        setForms([])
+        setSubmissions([])
+      } finally {
+        setLoading(false)
+      }
     }
-  ])
+
+    fetchData()
+  }, [])
 
   const [activeTab, setActiveTab] = useState<'forms' | 'submissions' | 'create'>('forms')
 
@@ -68,31 +87,68 @@ export default function Forms() {
         <button className="btn-primary">Create Form</button>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {[
-            { id: 'forms', name: 'Forms', count: forms.length },
-            { id: 'submissions', name: 'Submissions', count: forms.reduce((sum, f) => sum + f.submissions, 0) },
-            { id: 'create', name: 'Create New', count: 0 }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
-                  ? 'border-brand-primary text-brand-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+      {/* Error State */}
+      {error && (
+        <div className="metric-card bg-red-50 border-red-200">
+          <div className="flex items-center space-x-2">
+            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-red-600">{error}</span>
+            <button 
+              onClick={() => window.location.reload()}
+              className="ml-auto text-red-600 hover:text-red-800 underline"
             >
-              {tab.name} ({tab.count})
+              Retry
             </button>
-          ))}
-        </nav>
-      </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && !error && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, index) => (
+              <div key={index} className="metric-card animate-pulse">
+                <div className="h-4 bg-gray-200 rounded mb-4"></div>
+                <div className="h-8 bg-gray-200 rounded"></div>
+              </div>
+            ))}
+          </div>
+          <div className="metric-card animate-pulse">
+            <div className="h-64 bg-gray-200 rounded"></div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      {!loading && !error && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            {[
+              { id: 'forms', name: 'Forms', count: forms.length },
+              { id: 'submissions', name: 'Submissions', count: forms.reduce((sum, f) => sum + f.submissions, 0) },
+              { id: 'create', name: 'Create New', count: 0 }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab.id
+                    ? 'border-brand-primary text-brand-primary'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.name} ({tab.count})
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
 
       {/* Forms Tab */}
-      {activeTab === 'forms' && (
+      {!loading && !error && activeTab === 'forms' && (
         <div className="space-y-6">
           {/* Form Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -100,7 +156,7 @@ export default function Forms() {
               { title: 'Total Forms', value: forms.length, icon: '📝' },
               { title: 'Active', value: forms.filter(f => f.status === 'active').length, icon: '✅' },
               { title: 'Total Submissions', value: forms.reduce((sum, f) => sum + f.submissions, 0), icon: '📊' },
-              { title: 'Avg. Submissions', value: Math.round(forms.reduce((sum, f) => sum + f.submissions, 0) / forms.length), icon: '📈' }
+              { title: 'Avg. Submissions', value: forms.length > 0 ? Math.round(forms.reduce((sum, f) => sum + f.submissions, 0) / forms.length) : 0, icon: '📈' }
             ].map((stat, index) => (
               <div key={index} className="metric-card">
                 <div className="flex items-center justify-between">
@@ -166,7 +222,7 @@ export default function Forms() {
       )}
 
       {/* Submissions Tab */}
-      {activeTab === 'submissions' && (
+      {!loading && !error && activeTab === 'submissions' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">Recent Submissions</h2>
@@ -175,56 +231,40 @@ export default function Forms() {
 
           <div className="metric-card">
             <div className="space-y-4">
-              {[
-                {
-                  form: 'Contact Us',
-                  name: 'John Doe',
-                  email: 'john@example.com',
-                  message: 'I love your skincare products!',
-                  submittedAt: '2024-01-20T10:30:00Z'
-                },
-                {
-                  form: 'Newsletter Signup',
-                  name: 'Jane Smith',
-                  email: 'jane@example.com',
-                  message: 'Subscribed to newsletter',
-                  submittedAt: '2024-01-19T15:45:00Z'
-                },
-                {
-                  form: 'Product Feedback',
-                  name: 'Mike Johnson',
-                  email: 'mike@example.com',
-                  message: 'Great product, will buy again!',
-                  submittedAt: '2024-01-18T09:15:00Z'
-                }
-              ].map((submission, index) => (
-                <div key={index} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="font-semibold text-gray-900">{submission.name}</span>
-                        <span className="text-gray-500">•</span>
-                        <span className="text-sm text-gray-600">{submission.email}</span>
+              {submissions.length > 0 ? (
+                submissions.map((submission, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="font-semibold text-gray-900">{submission.name}</span>
+                          <span className="text-gray-500">•</span>
+                          <span className="text-sm text-gray-600">{submission.email}</span>
+                        </div>
+                        <p className="text-gray-700 mb-2">{submission.message}</p>
+                        <p className="text-xs text-gray-500">
+                          Via {submission.form} • {new Date(submission.submittedAt).toLocaleString()}
+                        </p>
                       </div>
-                      <p className="text-gray-700 mb-2">{submission.message}</p>
-                      <p className="text-xs text-gray-500">
-                        Via {submission.form} • {new Date(submission.submittedAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button className="btn-secondary text-xs px-2 py-1">Reply</button>
-                      <button className="btn-secondary text-xs px-2 py-1">View</button>
+                      <div className="flex space-x-2">
+                        <button className="btn-secondary text-xs px-2 py-1">Reply</button>
+                        <button className="btn-secondary text-xs px-2 py-1">View</button>
+                      </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No form submissions available</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* Create Tab */}
-      {activeTab === 'create' && (
+      {!loading && !error && activeTab === 'create' && (
         <div className="space-y-6">
           <div className="metric-card">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New Form</h2>

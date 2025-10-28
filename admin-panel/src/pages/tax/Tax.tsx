@@ -36,7 +36,7 @@ const Tax = () => {
   const loadTaxData = async () => {
     try {
       setLoading(true);
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const [ratesRes, reportRes] = await Promise.all([
         fetch(`${apiBase}/api/tax-rates`),
         fetch(`${apiBase}/api/tax-report`)
@@ -237,20 +237,20 @@ const Tax = () => {
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-600">Total Sales</span>
-                <span className="font-semibold">${taxReport.totalSales.toFixed(2)}</span>
+                <span className="font-semibold">${(taxReport.totalSales || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-600">Total Tax Collected</span>
-                <span className="font-semibold text-green-600">${taxReport.totalTax.toFixed(2)}</span>
+                <span className="font-semibold text-green-600">${(taxReport.totalTax || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Tax Rate</span>
-                <span className="font-semibold">{((taxReport.totalTax / taxReport.totalSales) * 100).toFixed(2)}%</span>
+                <span className="font-semibold">{(((taxReport.totalTax || 0) / (taxReport.totalSales || 1)) * 100).toFixed(2)}%</span>
               </div>
             </div>
             <div>
               <h4 className="text-sm font-medium text-gray-700 mb-2">Tax by Region</h4>
-              {taxReport.taxByRegion.map((region, index) => (
+              {taxReport?.taxByRegion?.map((region, index) => (
                 <div key={index} className="flex justify-between items-center mb-1">
                   <span className="text-sm text-gray-600">{region.region}</span>
                   <span className="text-sm font-medium">${region.amount.toFixed(2)}</span>
@@ -278,8 +278,8 @@ const Tax = () => {
             onChange={(e) => setRegionFilter(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-secondary"
           >
-            <option value="all">All Regions</option>
-            {Array.from(new Set(taxRates.map(rate => rate.region))).map(region => (
+            <option key="all" value="all">All Regions</option>
+            {Array.from(new Set(taxRates.map(rate => rate.region))).filter(region => region && region.trim() !== '').map(region => (
               <option key={region} value={region}>{region}</option>
             ))}
           </select>
@@ -464,8 +464,8 @@ const CreateTaxRateModal = ({ onClose, onSubmit, loading }: {
               onChange={(e) => setFormData({ ...formData, type: e.target.value as 'percentage' | 'fixed' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-secondary"
             >
-              <option value="percentage">Percentage</option>
-              <option value="fixed">Fixed Amount</option>
+              <option key="percentage" value="percentage">Percentage</option>
+              <option key="fixed" value="fixed">Fixed Amount</option>
             </select>
           </div>
 
@@ -583,8 +583,8 @@ const EditTaxRateModal = ({ taxRate, onClose, onSubmit, loading }: {
               onChange={(e) => setFormData({ ...formData, type: e.target.value as 'percentage' | 'fixed' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-secondary"
             >
-              <option value="percentage">Percentage</option>
-              <option value="fixed">Fixed Amount</option>
+              <option key="percentage" value="percentage">Percentage</option>
+              <option key="fixed" value="fixed">Fixed Amount</option>
             </select>
           </div>
 

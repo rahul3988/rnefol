@@ -36,7 +36,7 @@ export default function LoginPage() {
         setError(authError || 'Login failed')
       } else {
         // Redirect to home page
-        window.location.hash = '#/'
+        window.location.hash = '#/user/'
       }
     } catch (err) {
       setError('Login failed. Please try again.')
@@ -69,7 +69,7 @@ export default function LoginPage() {
         setError(authError || 'Signup failed')
       } else {
         // Redirect to home page
-        window.location.hash = '#/'
+        window.location.hash = '#/user/'
       }
     } catch (err) {
       setError('Signup failed. Please try again.')

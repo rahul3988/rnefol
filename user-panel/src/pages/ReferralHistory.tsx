@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Users, Calendar, DollarSign, Package, TrendingUp, Filter, Download } from 'lucide-react'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.66:4000'
+
 interface ReferralData {
   id: string
   name: string
@@ -18,6 +20,8 @@ interface ReferralStats {
   total_referrals: number
   active_referrals: number
   total_commission: number
+  total_orders: number
+  total_spent: number
   average_order_value: number
   conversion_rate: number
 }
@@ -35,81 +39,49 @@ export default function ReferralHistory() {
 
   const fetchReferralHistory = async () => {
     try {
-      // Mock data - replace with actual API call later
-      const mockReferrals: ReferralData[] = [
-        {
-          id: '1',
-          name: 'Priya Sharma',
-          email: 'priya@example.com',
-          signup_date: '2024-11-15',
-          total_orders: 3,
-          total_spent: 2500,
-          commission_earned: 250,
-          status: 'active',
-          last_order_date: '2024-12-10',
-          conversion_rate: 85
-        },
-        {
-          id: '2',
-          name: 'Raj Patel',
-          email: 'raj@example.com',
-          signup_date: '2024-11-10',
-          total_orders: 1,
-          total_spent: 1200,
-          commission_earned: 120,
-          status: 'active',
-          last_order_date: '2024-11-20',
-          conversion_rate: 60
-        },
-        {
-          id: '3',
-          name: 'Sneha Gupta',
-          email: 'sneha@example.com',
-          signup_date: '2024-10-28',
-          total_orders: 5,
-          total_spent: 4500,
-          commission_earned: 450,
-          status: 'active',
-          last_order_date: '2024-12-05',
-          conversion_rate: 95
-        },
-        {
-          id: '4',
-          name: 'Amit Kumar',
-          email: 'amit@example.com',
-          signup_date: '2024-10-15',
-          total_orders: 0,
-          total_spent: 0,
-          commission_earned: 0,
-          status: 'inactive',
-          conversion_rate: 0
-        },
-        {
-          id: '5',
-          name: 'Kavya Singh',
-          email: 'kavya@example.com',
-          signup_date: '2024-09-20',
-          total_orders: 2,
-          total_spent: 1800,
-          commission_earned: 180,
-          status: 'inactive',
-          last_order_date: '2024-10-15',
-          conversion_rate: 70
-        }
-      ]
-
-      const mockStats: ReferralStats = {
-        total_referrals: mockReferrals.length,
-        active_referrals: mockReferrals.filter(r => r.status === 'active').length,
-        total_commission: mockReferrals.reduce((sum, r) => sum + r.commission_earned, 0),
-        average_order_value: mockReferrals.filter(r => r.total_orders > 0).reduce((sum, r) => sum + (r.total_spent / r.total_orders), 0) / mockReferrals.filter(r => r.total_orders > 0).length || 0,
-        conversion_rate: (mockReferrals.filter(r => r.total_orders > 0).length / mockReferrals.length) * 100
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setReferrals([])
+        setStats(null)
+        return
       }
 
-      setReferrals(mockReferrals)
-      setStats(mockStats)
+      const response = await fetch(`${API_BASE_URL}/api/affiliate/referrals`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setReferrals(data.referrals || [])
+        
+        // Calculate stats from real data
+        const totalReferrals = data.referrals?.length || 0
+        const activeReferrals = data.referrals?.filter((r: any) => r.status === 'active').length || 0
+        const totalCommission = data.referrals?.reduce((sum: number, r: any) => sum + (r.commission_earned || 0), 0) || 0
+        const totalOrders = data.referrals?.reduce((sum: number, r: any) => sum + (r.total_orders || 0), 0) || 0
+        const totalSpent = data.referrals?.reduce((sum: number, r: any) => sum + (r.total_spent || 0), 0) || 0
+        
+        setStats({
+          total_referrals: totalReferrals,
+          active_referrals: activeReferrals,
+          total_commission: totalCommission,
+          total_orders: totalOrders,
+          total_spent: totalSpent,
+          average_order_value: totalOrders > 0 ? totalSpent / totalOrders : 0,
+          conversion_rate: totalReferrals > 0 ? (activeReferrals / totalReferrals) * 100 : 0
+        })
+      } else {
+        console.error('Failed to fetch referral history')
+        setReferrals([])
+        setStats(null)
+      }
     } catch (error) {
       console.error('Failed to fetch referral history:', error)
+      setReferrals([])
+      setStats(null)
     } finally {
       setLoading(false)
     }
@@ -173,7 +145,7 @@ export default function ReferralHistory() {
         {/* Header */}
         <div className="mb-8">
           <button 
-            onClick={() => window.location.hash = '#/affiliate-partner'}
+            onClick={() => window.location.hash = '#/user/affiliate-partner'}
             className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors mb-4"
           >
             <ArrowLeft className="h-4 w-4" />

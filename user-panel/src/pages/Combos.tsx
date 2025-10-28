@@ -90,10 +90,10 @@ export default function Combos() {
             </div>
           ) : (
             products.map((product) => (
-              <div key={product.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow group cursor-pointer" onClick={() => window.location.hash = `#/product/${product.slug}`}>
+              <div key={product.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow group cursor-pointer flex flex-col" onClick={() => window.location.hash = `#/user/product/${product.slug}`}>
                 <div className="relative">
                   <img 
-                    src={product.list_image || '/IMAGES/placeholder.jpg'} 
+                    src={product.list_image || '/IMAGES/default-product.jpg'} 
                     alt={product.title}
                     className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
                   />
@@ -108,64 +108,66 @@ export default function Combos() {
                     </button>
                   </div>
                 </div>
-                <div className="p-6">
+                <div className="p-6 flex flex-col h-full">
                   <div className="flex items-center mb-2">
                     <Package className="w-5 h-5 mr-2" style={{ color: '#4B97C9' }} />
                     <span className="text-sm font-medium" style={{ color: '#4B97C9' }}>COMBO PACK</span>
                   </div>
-                  <h3 className="text-lg font-bold mb-2" style={{ color: '#1B4965' }}>
+                  <h3 className="text-lg font-bold mb-2 line-clamp-2" style={{ color: '#1B4965' }}>
                     {product.title}
                   </h3>
-                  <p className="text-sm mb-4" style={{ color: '#9DB4C0' }}>
+                  <p className="text-sm mb-4 line-clamp-2" style={{ color: '#9DB4C0' }}>
                     {product.description || 'Premium combo pack with multiple products'}
                   </p>
 
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      {product.details?.mrp && product.details?.websitePrice ? (
-                        <div>
-                          <div className="text-gray-500 line-through text-sm">₹{product.details.mrp}</div>
-                          <span className="text-2xl font-bold text-green-600">₹{product.details.websitePrice}</span>
-                          <div className="text-xs text-green-500">
-                            {Math.round(((parseFloat(product.details.mrp) - parseFloat(product.details.websitePrice)) / parseFloat(product.details.mrp) * 100))}% OFF
+                  <div className="mt-auto pt-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        {product.details?.mrp && product.details?.websitePrice ? (
+                          <div>
+                            <div className="text-gray-500 line-through text-sm">₹{product.details.mrp}</div>
+                            <span className="text-2xl font-bold text-green-600">₹{product.details.websitePrice}</span>
+                            <div className="text-xs text-green-500">
+                              {Math.round(((parseFloat(product.details.mrp) - parseFloat(product.details.websitePrice)) / parseFloat(product.details.mrp) * 100))}% OFF
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <span className="text-2xl font-bold" style={{ color: '#1B4965' }}>
-                          {product.price || '₹1,299'}
-                        </span>
-                      )}
+                        ) : (
+                          <span className="text-2xl font-bold" style={{ color: '#1B4965' }}>
+                            {product.price || '₹1,299'}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <button 
-                    className="w-full text-white py-3 rounded-lg transition-colors flex items-center justify-center" 
-                    style={{ backgroundColor: '#4B97C9' }} 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      addItem({
-                        slug: product.slug,
-                        title: product.title,
-                        price: product.price || '₹1,299',
-                        listImage: product.list_image,
-                        pdpImages: [],
-                        category: product.category,
-                        description: product.description || 'Premium combo pack with multiple products'
-                      })
-                      // Show success feedback
-                      const button = e.currentTarget
-                      const originalText = button.textContent
-                      button.textContent = 'Added!'
-                      button.style.backgroundColor = '#10B981'
-                      setTimeout(() => {
-                        button.textContent = originalText
-                        button.style.backgroundColor = '#4B97C9'
-                      }, 1500)
-                    }}
-                  >
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    Add to Cart
-                  </button>
+                    <button 
+                      className="w-full text-white py-3 rounded-lg transition-colors flex items-center justify-center" 
+                      style={{ backgroundColor: '#4B97C9' }} 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        addItem({
+                          slug: product.slug,
+                          title: product.title,
+                          price: product.price || '₹1,299',
+                          listImage: product.list_image,
+                          pdpImages: [],
+                          category: product.category,
+                          description: product.description || 'Premium combo pack with multiple products'
+                        })
+                        // Show success feedback
+                        const button = e.currentTarget
+                        const originalText = button.textContent
+                        button.textContent = 'Added!'
+                        button.style.backgroundColor = '#10B981'
+                        setTimeout(() => {
+                          button.textContent = originalText
+                          button.style.backgroundColor = '#4B97C9'
+                        }, 1500)
+                      }}
+                    >
+                      <ShoppingCart className="w-4 h-4 mr-2" />
+                      Add to Cart
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
@@ -222,13 +224,13 @@ export default function Combos() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="inline-block bg-white px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors" style={{ color: '#4B97C9' }}
             >
               Shop All Combos
             </a>
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="inline-block border-2 border-white px-8 py-3 rounded-lg font-semibold hover:bg-white transition-colors" style={{ color: 'white' }}
             >
               Get Expert Advice

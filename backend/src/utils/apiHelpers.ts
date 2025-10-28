@@ -100,6 +100,7 @@ export function authenticateToken(req: Request, res: Response, next: Function) {
     return sendError(res, 401, 'Invalid token format')
   }
   
+  // Extract userId from token (format: user_token_{userId}_{timestamp})
   req.userId = tokenParts[2]
   next()
 }

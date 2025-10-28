@@ -151,7 +151,7 @@ export default function BlogRequestForm({ onClose, onSubmitSuccess }: BlogReques
                 value={formData.author_email}
                 onChange={handleInputChange}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="your.email@example.com"
+                placeholder="your.email@domain.com"
                 required
                 disabled={isSubmitting}
               />

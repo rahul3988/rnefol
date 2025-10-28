@@ -9,6 +9,14 @@ type AnalyticsData = {
   revenue: number
   orders: number
   customers: number
+  sessionsChange: number
+  pageViewsChange: number
+  bounceRateChange: number
+  avgSessionDurationChange: number
+  conversionRateChange: number
+  revenueChange: number
+  ordersChange: number
+  customersChange: number
 }
 
 type ChartData = {
@@ -16,6 +24,12 @@ type ChartData = {
   sessions: number
   revenue: number
   orders: number
+}
+
+type TopPage = {
+  page: string
+  views: number
+  unique: number
 }
 
 export default function Analytics() {
@@ -27,13 +41,22 @@ export default function Analytics() {
     conversionRate: 0,
     revenue: 0,
     orders: 0,
-    customers: 0
+    customers: 0,
+    sessionsChange: 0,
+    pageViewsChange: 0,
+    bounceRateChange: 0,
+    avgSessionDurationChange: 0,
+    conversionRateChange: 0,
+    revenueChange: 0,
+    ordersChange: 0,
+    customersChange: 0
   })
   const [chartData, setChartData] = useState<ChartData[]>([])
+  const [topPages, setTopPages] = useState<TopPage[]>([])
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState('30d')
 
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   useEffect(() => {
     loadAnalyticsData()
@@ -46,6 +69,7 @@ export default function Analytics() {
       const data = await res.json()
       setAnalyticsData(data.overview || analyticsData)
       setChartData(data.chartData || [])
+      setTopPages(data.topPages || [])
     } catch (error) {
       console.error('Failed to load analytics:', error)
       setAnalyticsData({
@@ -56,69 +80,93 @@ export default function Analytics() {
         conversionRate: 0,
         revenue: 0,
         orders: 0,
-        customers: 0
+        customers: 0,
+        sessionsChange: 0,
+        pageViewsChange: 0,
+        bounceRateChange: 0,
+        avgSessionDurationChange: 0,
+        conversionRateChange: 0,
+        revenueChange: 0,
+        ordersChange: 0,
+        customersChange: 0
       })
       setChartData([])
+      setTopPages([])
     } finally {
       setLoading(false)
     }
   }
 
+  const formatChange = (change: number | undefined | null) => {
+    if (change === undefined || change === null || isNaN(change)) {
+      return '0.0%'
+    }
+    const sign = change >= 0 ? '+' : ''
+    return `${sign}${change.toFixed(1)}%`
+  }
+
+  const getTrend = (change: number | undefined | null) => {
+    if (change === undefined || change === null || isNaN(change)) {
+      return 'neutral'
+    }
+    return change >= 0 ? 'up' : 'down'
+  }
+
   const metrics = [
     {
       title: 'Sessions',
-      value: analyticsData.sessions.toLocaleString(),
-      change: '+9%',
-      trend: 'up',
+      value: (analyticsData.sessions || 0).toLocaleString(),
+      change: formatChange(analyticsData.sessionsChange),
+      trend: getTrend(analyticsData.sessionsChange),
       icon: '📈'
     },
     {
       title: 'Page Views',
-      value: analyticsData.pageViews.toLocaleString(),
-      change: '+12%',
-      trend: 'up',
+      value: (analyticsData.pageViews || 0).toLocaleString(),
+      change: formatChange(analyticsData.pageViewsChange),
+      trend: getTrend(analyticsData.pageViewsChange),
       icon: '👁️'
     },
     {
       title: 'Bounce Rate',
-      value: `${analyticsData.bounceRate}%`,
-      change: '-2%',
-      trend: 'down',
+      value: `${analyticsData.bounceRate || 0}%`,
+      change: formatChange(analyticsData.bounceRateChange),
+      trend: getTrend(analyticsData.bounceRateChange),
       icon: '📊'
     },
     {
       title: 'Avg. Session',
-      value: analyticsData.avgSessionDuration,
-      change: '+15%',
-      trend: 'up',
+      value: analyticsData.avgSessionDuration || '0:00',
+      change: formatChange(analyticsData.avgSessionDurationChange),
+      trend: getTrend(analyticsData.avgSessionDurationChange),
       icon: '⏱️'
     },
     {
       title: 'Conversion Rate',
-      value: `${analyticsData.conversionRate}%`,
-      change: '+3%',
-      trend: 'up',
+      value: `${analyticsData.conversionRate || 0}%`,
+      change: formatChange(analyticsData.conversionRateChange),
+      trend: getTrend(analyticsData.conversionRateChange),
       icon: '🎯'
     },
     {
       title: 'Revenue',
-      value: `₹${analyticsData.revenue.toLocaleString()}`,
-      change: '+137%',
-      trend: 'up',
+      value: `₹${(analyticsData.revenue || 0).toLocaleString()}`,
+      change: formatChange(analyticsData.revenueChange),
+      trend: getTrend(analyticsData.revenueChange),
       icon: '💰'
     },
     {
       title: 'Orders',
-      value: analyticsData.orders.toString(),
-      change: '+25%',
-      trend: 'up',
+      value: (analyticsData.orders || 0).toString(),
+      change: formatChange(analyticsData.ordersChange),
+      trend: getTrend(analyticsData.ordersChange),
       icon: '📦'
     },
     {
       title: 'Customers',
-      value: analyticsData.customers.toString(),
-      change: '+18%',
-      trend: 'up',
+      value: (analyticsData.customers || 0).toString(),
+      change: formatChange(analyticsData.customersChange),
+      trend: getTrend(analyticsData.customersChange),
       icon: '👥'
     }
   ]
@@ -157,7 +205,8 @@ export default function Analytics() {
             </div>
             <div className="mt-4 flex items-center">
               <span className={`text-sm font-medium ${
-                metric.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                metric.trend === 'up' ? 'text-green-600' : 
+                metric.trend === 'down' ? 'text-red-600' : 'text-gray-500'
               }`}>
                 {metric.change}
               </span>
@@ -205,26 +254,41 @@ export default function Analytics() {
       {/* Top Pages */}
       <div className="metric-card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Pages</h3>
-        <div className="space-y-3">
-          {[
-            { page: '/', views: 1250, unique: 980 },
-            { page: '/shop', views: 890, unique: 720 },
-            { page: '/product/nefol-aprajita', views: 650, unique: 580 },
-            { page: '/skincare', views: 420, unique: 380 },
-            { page: '/ingredients', views: 320, unique: 290 }
-          ].map((page, index) => (
-            <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-              <div>
-                <p className="font-medium text-gray-900">{page.page}</p>
-                <p className="text-sm text-gray-500">{page.unique} unique views</p>
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, index) => (
+              <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0 animate-pulse">
+                <div>
+                  <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-24"></div>
+                </div>
+                <div className="text-right">
+                  <div className="h-4 bg-gray-200 rounded w-16 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-20"></div>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="font-semibold text-gray-900">{page.views}</p>
-                <p className="text-sm text-gray-500">total views</p>
+            ))}
+          </div>
+        ) : topPages.length > 0 ? (
+          <div className="space-y-3">
+            {topPages.map((page, index) => (
+              <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                <div>
+                  <p className="font-medium text-gray-900">{page.page}</p>
+                  <p className="text-sm text-gray-500">{page.unique} unique views</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-gray-900">{page.views}</p>
+                  <p className="text-sm text-gray-500">total views</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            No page data available
+          </div>
+        )}
       </div>
     </div>
   )

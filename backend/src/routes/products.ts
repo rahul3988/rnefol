@@ -6,6 +6,8 @@ import { handleGetAll, handleCreate, handleUpdate, sendError, sendSuccess, valid
 // Optimized GET /api/products
 export async function getProducts(pool: Pool, res: Response) {
   try {
+    console.log(`📋 Fetching all products from database...`)
+    
     const { rows } = await pool.query(`
       SELECT p.*, 
              COALESCE(
@@ -20,6 +22,8 @@ export async function getProducts(pool: Pool, res: Response) {
       ORDER BY p.created_at DESC
     `)
     
+    console.log(`✅ Retrieved ${rows.length} products from database`)
+    
     // Transform the data to match expected format
     const products = rows.map((product: any) => ({
       ...product,
@@ -28,6 +32,7 @@ export async function getProducts(pool: Pool, res: Response) {
     
     sendSuccess(res, products)
   } catch (err) {
+    console.error(`❌ Failed to fetch products:`, err)
     sendError(res, 500, 'Failed to fetch products', err)
   }
 }
@@ -111,14 +116,19 @@ export async function createProduct(pool: Pool, req: Request, res: Response) {
       return sendError(res, 400, validationError)
     }
     
+    console.log(`📦 Creating product: ${title} (slug: ${slug})`)
+    
     const { rows } = await pool.query(`
       INSERT INTO products (slug, title, category, price, list_image, description, details)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `, [slug, title, category, price, listImage, description, JSON.stringify(details)])
     
+    console.log(`✅ Product created successfully: ID=${rows[0].id}, Title=${rows[0].title}`)
+    
     sendSuccess(res, rows[0], 201)
   } catch (err: any) {
+    console.error(`❌ Failed to create product:`, err)
     if (err?.code === '23505') {
       sendError(res, 409, 'Product slug must be unique')
     } else {

@@ -1,25 +1,70 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+
+interface SocialPost {
+  id: number
+  platform: 'facebook' | 'instagram'
+  content: string
+  image: string
+  scheduledFor: string
+  status: 'scheduled' | 'published' | 'draft'
+}
+
+interface SocialStats {
+  totalPosts: number
+  scheduled: number
+  engagement: string
+  reach: string
+}
 
 export default function FacebookInstagram() {
   const [isConnected, setIsConnected] = useState(false)
-  const [posts, setPosts] = useState([
-    {
-      id: 1,
-      platform: 'facebook',
-      content: 'Introducing our new skincare range! 🌟',
-      image: '/IMAGES/PDP IMAGES/FACE SERUM (1).jpg',
-      scheduledFor: '2024-01-25T10:00:00Z',
-      status: 'scheduled'
-    },
-    {
-      id: 2,
-      platform: 'instagram',
-      content: 'Behind the scenes of our product photoshoot 📸',
-      image: '/IMAGES/PDP IMAGES/FACE MASK (1).jpg',
-      scheduledFor: '2024-01-24T15:30:00Z',
-      status: 'published'
+  const [posts, setPosts] = useState<SocialPost[]>([])
+  const [stats, setStats] = useState<SocialStats>({
+    totalPosts: 0,
+    scheduled: 0,
+    engagement: '0',
+    reach: '0'
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
+
+  useEffect(() => {
+    loadSocialData()
+  }, [])
+
+  const loadSocialData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      const [connectionRes, postsRes, statsRes] = await Promise.all([
+        fetch(`${apiBase}/api/social/connection-status`),
+        fetch(`${apiBase}/api/social/posts`),
+        fetch(`${apiBase}/api/social/stats`)
+      ])
+
+      if (connectionRes.ok) {
+        const connectionData = await connectionRes.json()
+        setIsConnected(connectionData.connected || false)
+      }
+
+      if (postsRes.ok) {
+        const postsData = await postsRes.json()
+        setPosts(postsData.posts || [])
+      }
+
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setStats(statsData)
+      }
+    } catch (error) {
+      console.error('Failed to load social data:', error)
+      setError('Failed to load social media data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   return (
     <div className="space-y-6">

@@ -1,53 +1,135 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import LiveMonitoring from '../components/LiveMonitoring'
+
+interface DashboardMetrics {
+  sessions: number
+  totalSales: number
+  orders: number
+  conversionRate: number
+  sessionsChange: number
+  salesChange: number
+  ordersChange: number
+  conversionChange: number
+}
+
+interface ActionItem {
+  title: string
+  icon: string
+  color: string
+}
 
 const Dashboard = () => {
   const navigate = useNavigate()
   const [showCongrats, setShowCongrats] = useState(true)
-  const metrics = [
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [actionItems, setActionItems] = useState<ActionItem[]>([])
+  const [liveVisitors, setLiveVisitors] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      const [metricsRes, actionItemsRes, visitorsRes] = await Promise.all([
+        fetch(`${apiBase}/api/dashboard/metrics`),
+        fetch(`${apiBase}/api/dashboard/action-items`),
+        fetch(`${apiBase}/api/dashboard/live-visitors`)
+      ])
+
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json()
+        setMetrics(metricsData)
+      }
+
+      if (actionItemsRes.ok) {
+        const actionItemsData = await actionItemsRes.json()
+        setActionItems(actionItemsData.items || [])
+      }
+
+      if (visitorsRes.ok) {
+        const visitorsData = await visitorsRes.json()
+        setLiveVisitors(visitorsData.count || 0)
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+      setError('Failed to load dashboard data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatMetricValue = (value: number | undefined, type: string) => {
+    if (value === undefined || value === null) {
+      return '0'
+    }
+    
+    switch (type) {
+      case 'sessions':
+        return value.toLocaleString()
+      case 'totalSales':
+        return `₹${value.toLocaleString()}`
+      case 'orders':
+        return value.toString()
+      case 'conversionRate':
+        return `${value.toFixed(2)}%`
+      default:
+        return value.toString()
+    }
+  }
+
+  const formatChange = (change: number | undefined) => {
+    if (change === undefined || change === null) {
+      return '+0.0%'
+    }
+    const sign = change >= 0 ? '+' : ''
+    return `${sign}${change.toFixed(1)}%`
+  }
+
+  const getTrend = (change: number | undefined) => {
+    if (change === undefined || change === null) {
+      return 'neutral'
+    }
+    return change >= 0 ? 'up' : 'down'
+  }
+
+  const dashboardMetrics = metrics ? [
     {
       title: 'Sessions',
-      value: '1,640',
-      change: '+9%',
-      trend: 'up',
+      value: formatMetricValue(metrics.sessions, 'sessions'),
+      change: formatChange(metrics.sessionsChange),
+      trend: getTrend(metrics.sessionsChange),
       icon: '📈'
     },
     {
       title: 'Total sales',
-      value: '₹1,889',
-      change: '+137%',
-      trend: 'up',
+      value: formatMetricValue(metrics.totalSales, 'totalSales'),
+      change: formatChange(metrics.salesChange),
+      trend: getTrend(metrics.salesChange),
       icon: '💰'
     },
     {
       title: 'Orders',
-      value: '85',
-      change: '-33%',
-      trend: 'down',
+      value: formatMetricValue(metrics.orders, 'orders'),
+      change: formatChange(metrics.ordersChange),
+      trend: getTrend(metrics.ordersChange),
       icon: '📦'
     },
     {
       title: 'Conversion rate',
-      value: '1.28%',
-      change: '-78%',
-      trend: 'down',
+      value: formatMetricValue(metrics.conversionRate, 'conversionRate'),
+      change: formatChange(metrics.conversionChange),
+      trend: getTrend(metrics.conversionChange),
       icon: '🎯'
     }
-  ]
-
-  const actionItems = [
-    {
-      title: '1 order to fulfill',
-      icon: '✅',
-      color: 'text-blue-600'
-    },
-    {
-      title: '3 payments to capture',
-      icon: '💳',
-      color: 'text-green-600'
-    }
-  ]
+  ] : []
 
   return (
     <div className="space-y-6">
@@ -58,7 +140,7 @@ const Dashboard = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button 
-            onClick={() => navigate('/analytics')}
+            onClick={() => navigate('/admin/analytics')}
             className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,7 +149,7 @@ const Dashboard = () => {
             <span>Last 30 days</span>
           </button>
           <button 
-            onClick={() => navigate('/analytics')}
+            onClick={() => navigate('/admin/analytics')}
             className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <span>All channels</span>
@@ -78,13 +160,44 @@ const Dashboard = () => {
         </div>
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-          <span className="text-sm text-gray-600">2 live visitors</span>
+          <span className="text-sm text-gray-600">{liveVisitors} live visitors</span>
         </div>
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="metric-card bg-red-50 border-red-200">
+          <div className="flex items-center space-x-2">
+            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-red-600">{error}</span>
+            <button 
+              onClick={loadDashboardData}
+              className="ml-auto text-red-600 hover:text-red-800 underline"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, index) => (
+            <div key={index} className="metric-card animate-pulse">
+              <div className="h-4 bg-gray-200 rounded mb-4"></div>
+              <div className="h-8 bg-gray-200 rounded"></div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {metrics.map((metric, index) => (
+      {!loading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {dashboardMetrics.map((metric, index) => (
           <div key={index} className="metric-card">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
@@ -116,7 +229,8 @@ const Dashboard = () => {
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
       {/* Performance Chart */}
       <div className="metric-card">
@@ -125,11 +239,11 @@ const Dashboard = () => {
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-              <span className="text-sm text-gray-600">Sep 8-Oct 8, 2025</span>
+              <span className="text-sm text-gray-600">Current Period</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-blue-200 rounded-full"></div>
-              <span className="text-sm text-gray-600">Aug 8-Sep 7, 2025</span>
+              <span className="text-sm text-gray-600">Previous Period</span>
             </div>
           </div>
         </div>
@@ -146,30 +260,32 @@ const Dashboard = () => {
       </div>
 
       {/* Action Items */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {actionItems.map((item, index) => (
-          <div key={index} className="metric-card">
-            <div className="flex items-center space-x-3">
-              <span className="text-2xl">{item.icon}</span>
-              <span className={`font-medium ${item.color}`}>{item.title}</span>
+      {!loading && !error && actionItems.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {actionItems.map((item, index) => (
+            <div key={index} className="metric-card">
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl">{item.icon}</span>
+                <span className={`font-medium ${item.color}`}>{item.title}</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Congratulations Card */}
-      {showCongrats && (
+      {showCongrats && metrics && metrics.orders >= 10 && (
         <div className="metric-card bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 relative">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <h3 className="text-xl font-bold text-gray-900 mb-2">
-                Congratulations on reaching 10 orders!
+                Congratulations on reaching {metrics.orders || 0} orders!
               </h3>
               <p className="text-gray-600 mb-4">
                 This is just the beginning of your journey. Keep pushing forward and watch your business grow with each new customer.
               </p>
               <button 
-                onClick={() => navigate('/orders')}
+                onClick={() => navigate('/admin/orders')}
                 className="btn-primary"
               >
                 View orders report

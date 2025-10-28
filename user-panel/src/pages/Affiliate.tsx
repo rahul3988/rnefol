@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getApiBase } from '../utils/apiBase'
 
 export default function Affiliate() {
   const [showForm, setShowForm] = useState(false)
@@ -52,7 +53,7 @@ export default function Affiliate() {
     
     try {
       // Send affiliate application to admin
-      const response = await fetch('/api/admin/affiliate-applications', {
+      const response = await fetch(`${getApiBase()}/api/admin/affiliate-applications`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

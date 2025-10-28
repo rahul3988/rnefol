@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { DollarSign, CreditCard, Gift, TrendingUp, Clock, CheckCircle, ArrowRight, Star, Calendar, Wallet, XCircle } from 'lucide-react'
+import apiService from '../services/api'
 
 // Coins calculation utility
 const COINS_CONVERSION_RATE = 10 // 10 coins = ₹1
@@ -49,107 +50,40 @@ interface CashbackWallet {
 }
 
 export default function CashbackSystem() {
-  const [cashbackWallet] = useState<CashbackWallet>({
-    totalEarned: rupeesToCoins(2500), // ₹2500 = 25,000 coins
-    availableBalance: rupeesToCoins(1800), // ₹1800 = 18,000 coins
-    pendingAmount: rupeesToCoins(700), // ₹700 = 7,000 coins
-    usedAmount: rupeesToCoins(700), // ₹700 = 7,000 coins
-    nextPayoutDate: '2024-02-15',
-    payoutMethod: 'Bank Transfer'
-  })
-
-  const [cashbackOffers] = useState<CashbackOffer[]>([
-    {
-      id: '1',
-      title: 'Skincare Essentials',
-      description: 'Get cashback on all skincare products',
-      cashbackPercentage: 5,
-      minOrderValue: 1000,
-      maxCashback: 500,
-      validUntil: '2024-02-28',
-      category: 'Skincare',
-      isActive: true,
-      terms: ['Minimum order value ₹1000', 'Maximum cashback ₹500', 'Valid on skincare products only']
-    },
-    {
-      id: '2',
-      title: 'Premium Products',
-      description: 'Extra cashback on premium skincare range',
-      cashbackPercentage: 8,
-      minOrderValue: 2000,
-      maxCashback: 1000,
-      validUntil: '2024-03-15',
-      category: 'Premium',
-      isActive: true,
-      terms: ['Minimum order value ₹2000', 'Maximum cashback ₹1000', 'Valid on premium products only']
-    },
-    {
-      id: '3',
-      title: 'First Time Buyer',
-      description: 'Special cashback for new customers',
-      cashbackPercentage: 10,
-      minOrderValue: 500,
-      maxCashback: 300,
-      validUntil: '2024-02-20',
-      category: 'New Customer',
-      isActive: true,
-      terms: ['For first-time buyers only', 'Minimum order value ₹500', 'Maximum cashback ₹300']
-    },
-    {
-      id: '4',
-      title: 'Bundle Offers',
-      description: 'Get more cashback on product bundles',
-      cashbackPercentage: 12,
-      minOrderValue: 3000,
-      maxCashback: 1500,
-      validUntil: '2024-03-30',
-      category: 'Bundles',
-      isActive: true,
-      terms: ['Minimum order value ₹3000', 'Maximum cashback ₹1500', 'Valid on bundle offers only']
-    }
-  ])
-
-  const [transactions] = useState<CashbackTransaction[]>([
-    {
-      id: '1',
-      orderId: 'ORD-2024-001',
-      amount: 150,
-      status: 'credited',
-      date: '2024-01-15',
-      productName: 'Face Cleanser + Moisturizer',
-      orderValue: 1500
-    },
-    {
-      id: '2',
-      orderId: 'ORD-2024-002',
-      amount: 200,
-      status: 'approved',
-      date: '2024-01-20',
-      productName: 'Anti-Aging Serum',
-      orderValue: 2000
-    },
-    {
-      id: '3',
-      orderId: 'ORD-2024-003',
-      amount: 100,
-      status: 'pending',
-      date: '2024-01-25',
-      productName: 'Sunscreen SPF 50',
-      orderValue: 1000
-    },
-    {
-      id: '4',
-      orderId: 'ORD-2024-004',
-      amount: 300,
-      status: 'credited',
-      date: '2024-01-10',
-      productName: 'Complete Skincare Kit',
-      orderValue: 3000
-    }
-  ])
-
+  const [cashbackWallet, setCashbackWallet] = useState<CashbackWallet | null>(null)
+  const [cashbackOffers, setCashbackOffers] = useState<CashbackOffer[]>([])
+  const [transactions, setTransactions] = useState<CashbackTransaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [showRedeemModal, setShowRedeemModal] = useState(false)
   const [redeemAmount, setRedeemAmount] = useState(0)
+
+  useEffect(() => {
+    loadCashbackData()
+  }, [])
+
+  const loadCashbackData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [walletData, offersData, transactionsData] = await Promise.all([
+        apiService.getCashbackWallet().catch(() => null as CashbackWallet | null),
+        apiService.getCashbackOffers().catch(() => [] as CashbackOffer[]),
+        apiService.getCashbackTransactions().catch(() => [] as CashbackTransaction[])
+      ])
+      
+      if (walletData) {
+        setCashbackWallet(walletData as CashbackWallet)
+      }
+      setCashbackOffers(Array.isArray(offersData) ? offersData : [])
+      setTransactions(Array.isArray(transactionsData) ? transactionsData : [])
+    } catch (err) {
+      console.error('Failed to load cashback data:', err)
+      setError('Failed to load cashback data')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -171,8 +105,8 @@ export default function CashbackSystem() {
     }
   }
 
-  const handleRedeemCashback = () => {
-    if (redeemAmount > cashbackWallet.availableBalance) {
+  const handleRedeemCashback = async () => {
+    if (!cashbackWallet || redeemAmount > cashbackWallet.availableBalance) {
       alert('Insufficient balance')
       return
     }
@@ -180,9 +114,16 @@ export default function CashbackSystem() {
       alert('Minimum redemption amount is ₹100')
       return
     }
-    alert(`Cashback redemption request submitted for ₹${redeemAmount}`)
-    setShowRedeemModal(false)
-    setRedeemAmount(0)
+    try {
+      await apiService.redeemCashback({ amount: redeemAmount })
+      alert(`Cashback redemption request submitted for ₹${redeemAmount}`)
+      setShowRedeemModal(false)
+      setRedeemAmount(0)
+      await loadCashbackData()
+    } catch (err) {
+      alert('Redemption failed. Please try again.')
+      console.error('Redemption error:', err)
+    }
   }
 
   const calculateCashback = (orderValue: number, offer: CashbackOffer) => {
@@ -190,16 +131,51 @@ export default function CashbackSystem() {
     return Math.min(cashback, offer.maxCashback)
   }
 
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto p-6 flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading cashback data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+          <button onClick={loadCashbackData} className="ml-4 underline">Retry</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!cashbackWallet) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <p className="text-slate-600 dark:text-slate-400">No cashback data available</p>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8">
       {/* Header */}
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-          Nefol Coins Program
-        </h1>
-        <p className="text-slate-600 dark:text-slate-400">
-          Earn coins on every purchase and redeem them for future orders
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="text-center flex-1">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+            Nefol Coins Program
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400">
+            Earn coins on every purchase and redeem them for future orders
+          </p>
+        </div>
+        <button onClick={loadCashbackData} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+          Refresh
+        </button>
       </div>
 
       {/* Points Wallet Overview */}

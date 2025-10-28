@@ -122,7 +122,7 @@ export default function Orders() {
               Start shopping to see your orders here.
             </p>
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Start Shopping
@@ -203,13 +203,13 @@ export default function Orders() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Contact Support
             </a>
             <a 
-              href="#/faq" 
+              href="#/user/faq" 
               className="inline-block border-2 border-blue-600 text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 hover:text-white transition-colors"
             >
               View FAQ

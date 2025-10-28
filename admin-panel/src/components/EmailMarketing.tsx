@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Mail, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus } from 'lucide-react'
+import apiService from '../services/api'
 
 interface EmailCampaign {
   id: string
@@ -37,148 +38,67 @@ interface EmailAutomation {
 }
 
 export default function EmailMarketing() {
-  const [campaigns] = useState<EmailCampaign[]>([
-    {
-      id: '1',
-      name: 'New Year Skincare Sale',
-      subject: 'Get 25% off on all skincare products!',
-      status: 'sent',
-      type: 'promotional',
-      audience: 'All Customers',
-      sentDate: '2024-01-01',
-      recipients: 5000,
-      openRate: 24.5,
-      clickRate: 8.2,
-      conversionRate: 3.1,
-      revenue: 12500
-    },
-    {
-      id: '2',
-      name: 'Weekly Beauty Tips',
-      subject: 'This week\'s skincare routine tips',
-      status: 'scheduled',
-      type: 'newsletter',
-      audience: 'Subscribers',
-      scheduledDate: '2024-02-15',
-      recipients: 3200,
-      openRate: 0,
-      clickRate: 0,
-      conversionRate: 0,
-      revenue: 0
-    },
-    {
-      id: '3',
-      name: 'Cart Abandonment Reminder',
-      subject: 'Don\'t forget your skincare essentials!',
-      status: 'sent',
-      type: 'abandoned_cart',
-      audience: 'Cart Abandoners',
-      sentDate: '2024-01-20',
-      recipients: 850,
-      openRate: 18.7,
-      clickRate: 12.3,
-      conversionRate: 7.8,
-      revenue: 3200
-    },
-    {
-      id: '4',
-      name: 'Welcome Series - Day 1',
-      subject: 'Welcome to Nefol! Start your skincare journey',
-      status: 'sent',
-      type: 'welcome',
-      audience: 'New Customers',
-      sentDate: '2024-01-15',
-      recipients: 1200,
-      openRate: 32.1,
-      clickRate: 15.6,
-      conversionRate: 9.2,
-      revenue: 4800
-    }
-  ])
-
-  const [templates] = useState<EmailTemplate[]>([
-    {
-      id: '1',
-      name: 'Sale Announcement',
-      category: 'Promotional',
-      preview: 'Limited time offer - Get up to 50% off on selected products',
-      isCustom: false
-    },
-    {
-      id: '2',
-      name: 'Product Launch',
-      category: 'Promotional',
-      preview: 'Introducing our new anti-aging serum with revolutionary formula',
-      isCustom: false
-    },
-    {
-      id: '3',
-      name: 'Newsletter Template',
-      category: 'Newsletter',
-      preview: 'This week\'s beauty tips and skincare routine recommendations',
-      isCustom: false
-    },
-    {
-      id: '4',
-      name: 'Birthday Wishes',
-      category: 'Personal',
-      preview: 'Happy Birthday! Here\'s a special gift just for you',
-      isCustom: false
-    }
-  ])
-
-  const [automations] = useState<EmailAutomation[]>([
-    {
-      id: '1',
-      name: 'Welcome Series',
-      trigger: 'New Customer Registration',
-      condition: 'First time buyer',
-      action: 'Send welcome email series (3 emails)',
-      isActive: true,
-      emailsSent: 1200,
-      conversionRate: 9.2
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment',
-      trigger: 'Cart Abandoned',
-      condition: 'Cart value > ₹500',
-      action: 'Send reminder email after 1 hour',
-      isActive: true,
-      emailsSent: 850,
-      conversionRate: 7.8
-    },
-    {
-      id: '3',
-      name: 'Birthday Campaign',
-      trigger: 'Customer Birthday',
-      condition: 'Active customer',
-      action: 'Send birthday discount email',
-      isActive: true,
-      emailsSent: 320,
-      conversionRate: 12.5
-    },
-    {
-      id: '4',
-      name: 'Re-engagement',
-      trigger: 'No Purchase in 30 Days',
-      condition: 'Last purchase > 30 days',
-      action: 'Send re-engagement offer',
-      isActive: false,
-      emailsSent: 0,
-      conversionRate: 0
-    }
-  ])
-
+  const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [automations, setAutomations] = useState<EmailAutomation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
   const [showCreateAutomation, setShowCreateAutomation] = useState(false)
   const [selectedCampaign, setSelectedCampaign] = useState<EmailCampaign | null>(null)
 
+  useEffect(() => {
+    loadEmailData()
+  }, [])
+
+  const loadEmailData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [campaignsData, templatesData, automationsData] = await Promise.all([
+        apiService.getEmailCampaigns().catch(() => []),
+        apiService.getEmailTemplates().catch(() => []),
+        apiService.getEmailAutomations().catch(() => [])
+      ])
+      
+      setCampaigns(Array.isArray(campaignsData) ? campaignsData : [])
+      setTemplates(Array.isArray(templatesData) ? templatesData : [])
+      setAutomations(Array.isArray(automationsData) ? automationsData : [])
+    } catch (err) {
+      console.error('Failed to load email data:', err)
+      setError('Failed to load email data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const totalStats = {
     totalCampaigns: campaigns.length,
     totalRecipients: campaigns.reduce((sum, campaign) => sum + campaign.recipients, 0),
-    averageOpenRate: campaigns.reduce((sum, campaign) => sum + campaign.openRate, 0) / campaigns.length,
+    averageOpenRate: campaigns.length > 0 ? campaigns.reduce((sum, campaign) => sum + campaign.openRate, 0) / campaigns.length : 0,
     totalRevenue: campaigns.reduce((sum, campaign) => sum + campaign.revenue, 0)
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6 flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading email marketing data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+          <button onClick={loadEmailData} className="ml-4 underline">Retry</button>
+        </div>
+      </div>
+    )
   }
 
   const getStatusColor = (status: string) => {
@@ -214,13 +134,21 @@ export default function EmailMarketing() {
             Create and manage email campaigns to engage your customers
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateCampaign(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Create Campaign</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={loadEmailData}
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowCreateCampaign(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Campaign</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}

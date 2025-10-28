@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { MessageSquare, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Smartphone } from 'lucide-react'
+import apiService from '../services/api'
 
 interface SMSCampaign {
   id: string
@@ -38,152 +39,67 @@ interface SMSAutomation {
 }
 
 export default function SMSMarketing() {
-  const [campaigns] = useState<SMSCampaign[]>([
-    {
-      id: '1',
-      name: 'Flash Sale Alert',
-      message: '🔥 FLASH SALE! Get 30% off on all skincare products. Limited time offer. Shop now: nefol.com/sale',
-      status: 'sent',
-      type: 'promotional',
-      audience: 'All Customers',
-      sentDate: '2024-01-15',
-      recipients: 2500,
-      deliveryRate: 98.5,
-      openRate: 85.2,
-      clickRate: 12.8,
-      conversionRate: 8.5,
-      revenue: 8500
-    },
-    {
-      id: '2',
-      name: 'Order Confirmation',
-      message: 'Hi [Name], your order #ORD-2024-001 has been confirmed. Expected delivery: 2-3 days. Track: nefol.com/track',
-      status: 'sent',
-      type: 'transactional',
-      audience: 'Order Customers',
-      sentDate: '2024-01-20',
-      recipients: 150,
-      deliveryRate: 99.2,
-      openRate: 95.8,
-      clickRate: 45.2,
-      conversionRate: 0,
-      revenue: 0
-    },
-    {
-      id: '3',
-      name: 'Cart Reminder',
-      message: 'Don\'t forget your skincare essentials! Complete your order and get free shipping. nefol.com/cart',
-      status: 'sent',
-      type: 'abandoned_cart',
-      audience: 'Cart Abandoners',
-      sentDate: '2024-01-18',
-      recipients: 320,
-      deliveryRate: 97.8,
-      openRate: 78.5,
-      clickRate: 18.2,
-      conversionRate: 12.5,
-      revenue: 2400
-    },
-    {
-      id: '4',
-      name: 'Birthday Wishes',
-      message: 'Happy Birthday [Name]! 🎉 Enjoy 20% off on your special day. Use code BDAY20. Valid for 7 days.',
-      status: 'scheduled',
-      type: 'birthday',
-      audience: 'Birthday Customers',
-      scheduledDate: '2024-02-15',
-      recipients: 45,
-      deliveryRate: 0,
-      openRate: 0,
-      clickRate: 0,
-      conversionRate: 0,
-      revenue: 0
-    }
-  ])
-
-  const [templates] = useState<SMSTemplate[]>([
-    {
-      id: '1',
-      name: 'Sale Announcement',
-      category: 'Promotional',
-      message: '🔥 SALE ALERT! Get [discount]% off on [category]. Limited time offer. Shop now: [link]',
-      isCustom: false
-    },
-    {
-      id: '2',
-      name: 'Order Update',
-      category: 'Transactional',
-      message: 'Hi [name], your order #[order_id] status: [status]. Track: [tracking_link]',
-      isCustom: false
-    },
-    {
-      id: '3',
-      name: 'Reminder',
-      category: 'Reminder',
-      message: 'Don\'t forget! Your [product] is waiting. Complete your order: [link]',
-      isCustom: false
-    },
-    {
-      id: '4',
-      name: 'Birthday Offer',
-      category: 'Personal',
-      message: 'Happy Birthday [name]! 🎉 Enjoy [discount]% off. Use code [code]. Valid for [days] days.',
-      isCustom: false
-    }
-  ])
-
-  const [automations] = useState<SMSAutomation[]>([
-    {
-      id: '1',
-      name: 'Order Confirmation',
-      trigger: 'Order Placed',
-      condition: 'All orders',
-      action: 'Send confirmation SMS',
-      isActive: true,
-      messagesSent: 150,
-      conversionRate: 0
-    },
-    {
-      id: '2',
-      name: 'Cart Abandonment',
-      trigger: 'Cart Abandoned',
-      condition: 'Cart value > ₹500',
-      action: 'Send reminder SMS after 2 hours',
-      isActive: true,
-      messagesSent: 320,
-      conversionRate: 12.5
-    },
-    {
-      id: '3',
-      name: 'Birthday Campaign',
-      trigger: 'Customer Birthday',
-      condition: 'Active customer',
-      action: 'Send birthday offer SMS',
-      isActive: true,
-      messagesSent: 45,
-      conversionRate: 15.2
-    },
-    {
-      id: '4',
-      name: 'Delivery Update',
-      trigger: 'Order Shipped',
-      condition: 'All shipped orders',
-      action: 'Send tracking SMS',
-      isActive: false,
-      messagesSent: 0,
-      conversionRate: 0
-    }
-  ])
-
+  const [campaigns, setCampaigns] = useState<SMSCampaign[]>([])
+  const [templates, setTemplates] = useState<SMSTemplate[]>([])
+  const [automations, setAutomations] = useState<SMSAutomation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
   const [showCreateAutomation, setShowCreateAutomation] = useState(false)
   const [selectedCampaign, setSelectedCampaign] = useState<SMSCampaign | null>(null)
 
+  useEffect(() => {
+    loadSMSData()
+  }, [])
+
+  const loadSMSData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const [campaignsData, templatesData, automationsData] = await Promise.all([
+        apiService.getSMSCampaigns().catch(() => []),
+        apiService.getSMSTemplates().catch(() => []),
+        apiService.getSMSAutomations().catch(() => [])
+      ])
+      
+      setCampaigns(Array.isArray(campaignsData) ? campaignsData : [])
+      setTemplates(Array.isArray(templatesData) ? templatesData : [])
+      setAutomations(Array.isArray(automationsData) ? automationsData : [])
+    } catch (err) {
+      console.error('Failed to load SMS data:', err)
+      setError('Failed to load SMS data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const totalStats = {
     totalCampaigns: campaigns.length,
     totalRecipients: campaigns.reduce((sum, campaign) => sum + campaign.recipients, 0),
-    averageDeliveryRate: campaigns.reduce((sum, campaign) => sum + campaign.deliveryRate, 0) / campaigns.length,
+    averageDeliveryRate: campaigns.length > 0 ? campaigns.reduce((sum, campaign) => sum + campaign.deliveryRate, 0) / campaigns.length : 0,
     totalRevenue: campaigns.reduce((sum, campaign) => sum + campaign.revenue, 0)
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6 flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading SMS marketing data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+          <button onClick={loadSMSData} className="ml-4 underline">Retry</button>
+        </div>
+      </div>
+    )
   }
 
   const getStatusColor = (status: string) => {
@@ -219,13 +135,21 @@ export default function SMSMarketing() {
             Send targeted SMS campaigns to engage customers instantly
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateCampaign(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Create Campaign</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={loadSMSData}
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowCreateCampaign(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Campaign</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}

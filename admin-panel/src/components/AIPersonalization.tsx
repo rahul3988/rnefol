@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Sparkles, Users, Target, BarChart3, Settings, Play, Pause, RotateCcw, Eye, MousePointer, ShoppingCart, Heart } from 'lucide-react'
+import apiService from '../services/api'
 
 interface PersonalizationRule {
   id: string
@@ -32,95 +33,28 @@ interface PersonalizationCampaign {
 }
 
 export default function AIPersonalization() {
-  const [rules] = useState<PersonalizationRule[]>([
-    {
-      id: '1',
-      name: 'Skincare Enthusiasts',
-      description: 'Show skincare products to customers interested in skincare',
-      status: 'active',
-      targetAudience: 'Skincare Enthusiasts',
-      conditions: ['Viewed skincare products', 'Added skincare to cart'],
-      actions: ['Show skincare recommendations', 'Send skincare emails'],
-      performance: {
-        impressions: 15000,
-        clicks: 3200,
-        conversions: 480,
-        revenue: 240000
-      }
-    },
-    {
-      id: '2',
-      name: 'High-Value Customers',
-      description: 'Offer premium products to high-spending customers',
-      status: 'active',
-      targetAudience: 'VIP Customers',
-      conditions: ['Total spent > ₹10000', 'Order frequency > 3'],
-      actions: ['Show premium products', 'Offer exclusive discounts'],
-      performance: {
-        impressions: 5000,
-        clicks: 1800,
-        conversions: 360,
-        revenue: 450000
-      }
-    },
-    {
-      id: '3',
-      name: 'New Customer Welcome',
-      description: 'Personalized welcome experience for new customers',
-      status: 'testing',
-      targetAudience: 'New Customers',
-      conditions: ['First visit', 'Registered in last 7 days'],
-      actions: ['Show welcome message', 'Offer first-time discount'],
-      performance: {
-        impressions: 8000,
-        clicks: 2400,
-        conversions: 320,
-        revenue: 160000
-      }
-    }
-  ])
+  const [rules, setRules] = useState<PersonalizationRule[]>([])
+  const [campaigns, setCampaigns] = useState<PersonalizationCampaign[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [campaigns] = useState<PersonalizationCampaign[]>([
-    {
-      id: '1',
-      name: 'Product Recommendations',
-      type: 'product_recommendation',
-      status: 'active',
-      audience: 'All Customers',
-      performance: {
-        reach: 25000,
-        engagement: 12.5,
-        conversion: 8.2,
-        revenue: 500000
-      }
-    },
-    {
-      id: '2',
-      name: 'Dynamic Pricing',
-      type: 'pricing',
-      status: 'active',
-      audience: 'Price-Sensitive Customers',
-      performance: {
-        reach: 15000,
-        engagement: 18.3,
-        conversion: 12.7,
-        revenue: 300000
-      }
-    },
-    {
-      id: '3',
-      name: 'Email Personalization',
-      type: 'email',
-      status: 'paused',
-      audience: 'Email Subscribers',
-      performance: {
-        reach: 20000,
-        engagement: 15.2,
-        conversion: 6.8,
-        revenue: 200000
-      }
+  useEffect(() => {
+    loadPersonalizationData()
+  }, [])
+
+  const loadPersonalizationData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getPersonalizationRules().catch(() => [])
+      setRules(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to load personalization data:', err)
+      setError('Failed to load personalization data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   const [activeTab, setActiveTab] = useState('rules')
 
@@ -151,6 +85,40 @@ export default function AIPersonalization() {
     { id: 'insights', label: 'Insights', icon: Sparkles }
   ]
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading personalization data...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadPersonalizationData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
       {/* Header */}
@@ -164,6 +132,13 @@ export default function AIPersonalization() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={loadPersonalizationData}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
           <button className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2">
             <Settings className="h-4 w-4" />
             <span>Settings</span>

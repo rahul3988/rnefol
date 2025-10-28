@@ -107,7 +107,7 @@ export default function Confirmation() {
         <div className="mx-auto max-w-3xl px-4 text-center">
           <h1 className="text-3xl font-bold mb-2 dark:text-slate-100">Order Not Found</h1>
           <p className="text-slate-600 dark:text-slate-400">{error || 'Unable to load order details'}</p>
-          <a href="#/shop" className="inline-block mt-6 rounded bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700">Continue Shopping</a>
+          <a href="#/user/shop" className="inline-block mt-6 rounded bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700">Continue Shopping</a>
         </div>
       </main>
     )
@@ -163,14 +163,86 @@ export default function Confirmation() {
         {/* Order Items */}
         <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm">
           <h2 className="text-xl font-semibold mb-4 dark:text-slate-100">Order Items</h2>
-          <div className="space-y-3">
-            {orderDetails.items.map((item, index) => (
-              <div key={index} className="flex justify-between items-center py-2 border-b border-slate-200 dark:border-slate-700 last:border-b-0">
-                <div>
-                  <p className="font-medium dark:text-slate-100">{item.title}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Qty: {item.quantity}</p>
+          <div className="space-y-6">
+            {orderDetails.items.map((item: any, index: number) => (
+              <div key={index} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <p className="font-medium text-lg dark:text-slate-100">{item.title}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Qty: {item.quantity}</p>
+                    {item.csvProduct?.['SKU'] && (
+                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">SKU: {item.csvProduct['SKU']}</p>
+                    )}
+                  </div>
+                  <p className="font-medium dark:text-slate-100">₹{(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
                 </div>
-                <p className="font-medium dark:text-slate-100">₹{(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
+                
+                {/* Product Details Section */}
+                {item.csvProduct && (
+                  <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <details className="group">
+                      <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
+                        View Product Details
+                      </summary>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {item.csvProduct['Brand Name'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Brand:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Brand Name']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['HSN Code'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">HSN Code:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['HSN Code']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Net Quantity (Content)'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Net Quantity:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Net Quantity (Content)']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Net Weight (Product Only)'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Net Weight:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Net Weight (Product Only)']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Country of Origin'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Country of Origin:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Country of Origin']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['GST %'] && (
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">GST:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['GST %']}%</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Manufacturer / Packer / Importer'] && (
+                          <div className="md:col-span-2">
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Manufacturer:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Manufacturer / Packer / Importer']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Key Ingredients'] && (
+                          <div className="md:col-span-2">
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Key Ingredients:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Key Ingredients']}</span>
+                          </div>
+                        )}
+                        {item.csvProduct['Package Content Details'] && (
+                          <div className="md:col-span-2">
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Package Contents:</span>
+                            <span className="ml-2 dark:text-slate-100">{item.csvProduct['Package Content Details']}</span>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -200,14 +272,18 @@ export default function Confirmation() {
 
         {/* Action Buttons */}
         <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-          <a href="#/shop" className="inline-block rounded bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 transition-colors">
+          <a href="#/user/shop" className="inline-block rounded bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 transition-colors text-center">
             Continue Shopping
           </a>
           <button 
-            onClick={() => window.print()} 
-            className="inline-block rounded border border-slate-300 dark:border-slate-600 px-6 py-3 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            onClick={() => {
+              // Open invoice in new tab for printing with Arctic Blue gradient design
+              const apiBase = `${window.location.protocol}//${window.location.hostname}:4000`
+              window.open(`${apiBase}/api/invoices/${orderDetails.order_number}/download`, '_blank')
+            }}
+            className="inline-block rounded bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 font-semibold text-white hover:from-blue-700 hover:to-purple-700 transition-all"
           >
-            Print Receipt
+            📄 Print Invoice/Receipt
           </button>
         </div>
 

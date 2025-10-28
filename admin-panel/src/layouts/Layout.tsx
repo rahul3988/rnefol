@@ -1,6 +1,25 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom'
-import { Search, X, ArrowRight } from 'lucide-react'
+import { Search, X, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
+import NotificationBell from '../components/NotificationBell'
+
+type LayoutView = 'categorized' | 'all-expanded' | 'compact'
+
+interface NavigationSection {
+  title: string
+  icon: string
+  items: NavigationItem[]
+  defaultOpen?: boolean
+}
+
+interface NavigationItem {
+  name: string
+  href: string
+  icon: string
+  description?: string
+  badge?: string
+  current?: boolean
+}
 
 const Layout = () => {
   const location = useLocation()
@@ -9,62 +28,177 @@ const Layout = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
+  const [layoutView, setLayoutView] = useState<LayoutView>('categorized')
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
 
-  // Define all admin options with their details for search
-  const allOptions = [
-    // Main Navigation
-    { name: 'Dashboard', href: '/', icon: '🏠', category: 'Main', description: 'Overview and analytics', current: location.pathname === '/' },
-    { name: 'Orders', href: '/orders', icon: '📦', category: 'Sales', description: 'Order management', badge: '4', current: location.pathname === '/orders' },
-    { name: 'Invoices', href: '/invoices', icon: '🧾', category: 'Finance', description: 'Invoice management', current: location.pathname === '/invoices' },
-    { name: 'Shipments', href: '/shipments', icon: '🚚', category: 'Logistics', description: 'Shipping management', current: location.pathname === '/shipments' },
-    { name: 'Products', href: '/products', icon: '🛍️', category: 'Catalog', description: 'Product management', current: location.pathname === '/products' },
-    { name: 'Customers', href: '/customers', icon: '👥', category: 'CRM', description: 'Customer management', current: location.pathname === '/customers' },
-    { name: 'Users', href: '/users', icon: '👤', category: 'System', description: 'User management', current: location.pathname === '/users' },
-    { name: 'CMS', href: '/cms', icon: '📝', category: 'Content', description: 'Content management system', current: location.pathname === '/cms' },
-    { name: 'Blog Requests', href: '/blog-requests', icon: '💬', category: 'Content', description: 'Blog submission management', current: location.pathname === '/blog-requests' },
-    { name: 'Loyalty Program', href: '/loyalty-program', icon: '⭐', category: 'Customer Engagement', description: 'Customer loyalty program', current: location.pathname === '/loyalty-program' },
-    { name: 'Affiliate Program', href: '/affiliate-program', icon: '🤝', category: 'Customer Engagement', description: 'Affiliate marketing', current: location.pathname === '/affiliate-program' },
-    { name: 'Affiliate Requests', href: '/affiliate-requests', icon: '📋', category: 'Customer Engagement', description: 'Manage affiliate applications', badge: '3', current: location.pathname === '/affiliate-requests' },
-    { name: 'Cashback System', href: '/cashback', icon: '💰', category: 'Customer Engagement', description: 'Cashback rewards', current: location.pathname === '/cashback' },
-    { name: 'Email Marketing', href: '/email-marketing', icon: '📧', category: 'Marketing', description: 'Email campaigns', current: location.pathname === '/email-marketing' },
-    { name: 'SMS Marketing', href: '/sms-marketing', icon: '📱', category: 'Marketing', description: 'SMS campaigns', current: location.pathname === '/sms-marketing' },
-    { name: 'Push Notifications', href: '/push-notifications', icon: '🔔', category: 'Marketing', description: 'Push notifications', current: location.pathname === '/push-notifications' },
-    { name: 'WhatsApp Chat', href: '/whatsapp-chat', icon: '💬', category: 'Customer Engagement', description: 'WhatsApp integration', current: location.pathname === '/whatsapp-chat' },
-    { name: 'Live Chat', href: '/live-chat', icon: '💬', category: 'Customer Engagement', description: 'Live chat support', current: location.pathname === '/live-chat' },
-    { name: 'Analytics', href: '/analytics', icon: '📊', category: 'Analytics', description: 'Business analytics', current: location.pathname === '/analytics' },
-    { name: 'Form Builder', href: '/form-builder', icon: '📝', category: 'Automation', description: 'Custom forms', current: location.pathname === '/form-builder' },
-    { name: 'Workflow Automation', href: '/workflow-automation', icon: '⚙️', category: 'Automation', description: 'Automated workflows', current: location.pathname === '/workflow-automation' },
-    { name: 'Customer Segmentation', href: '/customer-segmentation', icon: '🎯', category: 'CRM', description: 'Customer segments', current: location.pathname === '/customer-segmentation' },
-    { name: 'Journey Tracking', href: '/journey-tracking', icon: '🗺️', category: 'CRM', description: 'Customer journey', current: location.pathname === '/journey-tracking' },
-    { name: 'Actionable Analytics', href: '/actionable-analytics', icon: '📈', category: 'Analytics', description: 'Actionable insights', current: location.pathname === '/actionable-analytics' },
-    { name: 'AI Box', href: '/ai-box', icon: '🤖', category: 'AI Features', description: 'AI-powered features', current: location.pathname === '/ai-box' },
-    { name: 'Journey Funnel', href: '/journey-funnel', icon: '🔄', category: 'CRM', description: 'Conversion funnels', current: location.pathname === '/journey-funnel' },
-    { name: 'AI Personalization', href: '/ai-personalization', icon: '🎨', category: 'AI Features', description: 'AI personalization', current: location.pathname === '/ai-personalization' },
-    { name: 'Custom Audience', href: '/custom-audience', icon: '👥', category: 'Marketing', description: 'Custom audiences', current: location.pathname === '/custom-audience' },
-    { name: 'Omni Channel', href: '/omni-channel', icon: '🌐', category: 'Marketing', description: 'Multi-channel marketing', current: location.pathname === '/omni-channel' },
-    { name: 'API Manager', href: '/api-manager', icon: '🔧', category: 'System', description: 'API management', current: location.pathname === '/api-manager' },
-    { name: 'Payment Options', href: '/payment-options', icon: '💳', category: 'Finance', description: 'Payment methods', current: location.pathname === '/payment-options' },
-    { name: 'Video Manager', href: '/video-manager', icon: '🎬', category: 'Content', description: 'Video management', current: location.pathname === '/video-manager' },
-    { name: 'Invoice', href: '/invoice', icon: '🧾', category: 'Finance', description: 'Invoice processing', current: location.pathname === '/invoice' },
-    { name: 'Tax', href: '/tax', icon: '💰', category: 'Finance', description: 'Tax configuration', current: location.pathname === '/tax' },
-    { name: 'Returns', href: '/returns', icon: '↩️', category: 'Customer Service', description: 'Return processing', current: location.pathname === '/returns' },
-    { name: 'Payment', href: '/payment', icon: '💳', category: 'Finance', description: 'Payment processing', current: location.pathname === '/payment' },
-    { name: 'Categories', href: '/categories', icon: '📂', category: 'Catalog', description: 'Product categories', current: location.pathname === '/categories' },
-    { name: 'Marketing', href: '/marketing', icon: '📢', category: 'Marketing', description: 'Marketing campaigns', current: location.pathname === '/marketing' },
-    { name: 'Discounts', href: '/discounts', icon: '🏷️', category: 'Marketing', description: 'Discount management', current: location.pathname === '/discounts' },
+  // Define all admin options grouped by category
+  const navigationSections: NavigationSection[] = [
+    {
+      title: 'Overview',
+      icon: '📊',
+      defaultOpen: true,
+      items: [
+        { name: 'Dashboard', href: '/admin/', icon: '🏠', current: location.pathname === '/admin/' },
+      ]
+    },
+    {
+      title: 'Sales & Orders',
+      icon: '📦',
+      defaultOpen: true,
+      items: [
+        { name: 'Orders', href: '/admin/orders', icon: '📦', badge: '4', current: location.pathname === '/admin/orders' },
+        { name: 'Shipments', href: '/admin/shipments', icon: '🚚', current: location.pathname === '/admin/shipments' },
+        { name: 'Returns', href: '/admin/returns', icon: '↩️', current: location.pathname === '/admin/returns' },
+      ]
+    },
+    {
+      title: 'Catalog Management',
+      icon: '🛍️',
+      items: [
+        { name: 'Products', href: '/admin/products', icon: '🛍️', current: location.pathname === '/admin/products' },
+        { name: 'Product Variants', href: '/admin/product-variants', icon: '🎨', badge: 'NEW', current: location.pathname === '/admin/product-variants' },
+        { name: 'Categories', href: '/admin/categories', icon: '📂', current: location.pathname === '/admin/categories' },
+        { name: 'Inventory', href: '/admin/inventory', icon: '📊', badge: 'NEW', current: location.pathname === '/admin/inventory' },
+      ]
+    },
+    {
+      title: 'Customers & CRM',
+      icon: '👥',
+      items: [
+        { name: 'Customers', href: '/admin/customers', icon: '👥', current: location.pathname === '/admin/customers' },
+        { name: 'Customer Segmentation', href: '/admin/customer-segmentation', icon: '🎯', current: location.pathname === '/admin/customer-segmentation' },
+        { name: 'Journey Tracking', href: '/admin/journey-tracking', icon: '🗺️', current: location.pathname === '/admin/journey-tracking' },
+        { name: 'Journey Funnel', href: '/admin/journey-funnel', icon: '🔄', current: location.pathname === '/admin/journey-funnel' },
+      ]
+    },
+    {
+      title: 'Customer Engagement',
+      icon: '💬',
+      items: [
+        { name: 'Live Chat', href: '/admin/live-chat', icon: '🎧', current: location.pathname === '/admin/live-chat' },
+        { name: 'WhatsApp Chat', href: '/admin/whatsapp-chat', icon: '💬', current: location.pathname === '/admin/whatsapp-chat' },
+        { name: 'Contact Messages', href: '/admin/contact-messages', icon: '📧', current: location.pathname === '/admin/contact-messages' },
+        { name: 'Loyalty Program', href: '/admin/loyalty-program', icon: '⭐', current: location.pathname === '/admin/loyalty-program' },
+        { name: 'Affiliate Program', href: '/admin/affiliate-program', icon: '🤝', current: location.pathname === '/admin/affiliate-program' },
+        { name: 'Affiliate Requests', href: '/admin/affiliate-requests', icon: '📋', badge: '3', current: location.pathname === '/admin/affiliate-requests' },
+        { name: 'Cashback System', href: '/admin/cashback', icon: '💰', current: location.pathname === '/admin/cashback' },
+      ]
+    },
+    {
+      title: 'Marketing',
+      icon: '📢',
+      items: [
+        { name: 'Marketing', href: '/admin/marketing', icon: '📢', current: location.pathname === '/admin/marketing' },
+        { name: 'Discounts', href: '/admin/discounts', icon: '🏷️', current: location.pathname === '/admin/discounts' },
+        { name: 'Custom Audience', href: '/admin/custom-audience', icon: '👥', current: location.pathname === '/admin/custom-audience' },
+        { name: 'Omni Channel', href: '/admin/omni-channel', icon: '🌐', current: location.pathname === '/admin/omni-channel' },
+      ]
+    },
+    {
+      title: 'AI Features',
+      icon: '🤖',
+      items: [
+        { name: 'AI Box', href: '/admin/ai-box', icon: '🤖', current: location.pathname === '/admin/ai-box' },
+        { name: 'AI Personalization', href: '/admin/ai-personalization', icon: '🎨', current: location.pathname === '/admin/ai-personalization' },
+      ]
+    },
+    {
+      title: 'Analytics',
+      icon: '📈',
+      items: [
+        { name: 'Analytics', href: '/admin/analytics', icon: '📊', current: location.pathname === '/admin/analytics' },
+        { name: 'Actionable Analytics', href: '/admin/actionable-analytics', icon: '📈', current: location.pathname === '/admin/actionable-analytics' },
+      ]
+    },
+    {
+      title: 'Finance',
+      icon: '💰',
+      items: [
+        { name: 'Invoices', href: '/admin/invoices', icon: '🧾', current: location.pathname === '/admin/invoices' },
+        { name: 'Tax', href: '/admin/tax', icon: '💰', current: location.pathname === '/admin/tax' },
+        { name: 'Payment Options', href: '/admin/payment-options', icon: '💳', current: location.pathname === '/admin/payment-options' },
+        { name: 'Coin Withdrawals', href: '/admin/coin-withdrawals', icon: '💸', current: location.pathname === '/admin/coin-withdrawals' },
+      ]
+    },
+    {
+      title: 'Content',
+      icon: '📄',
+      items: [
+        { name: 'CMS', href: '/admin/cms', icon: '📄', current: location.pathname === '/admin/cms' },
+        { name: 'Video Manager', href: '/admin/video-manager', icon: '🎬', current: location.pathname === '/admin/video-manager' },
+        { name: 'Blog Requests', href: '/admin/blog-requests', icon: '📝', current: location.pathname === '/admin/blog-requests' },
+      ]
+    },
+    {
+      title: 'Notifications',
+      icon: '🔔',
+      items: [
+        { name: 'WhatsApp Management', href: '/admin/whatsapp-management', icon: '💬', current: location.pathname === '/admin/whatsapp-management' },
+        { name: 'WhatsApp Notifications', href: '/admin/whatsapp-notifications', icon: '📱', current: location.pathname === '/admin/whatsapp-notifications' },
+      ]
+    },
+    {
+      title: 'Automation',
+      icon: '⚙️',
+      items: [
+        { name: 'Workflow Automation', href: '/admin/workflow-automation', icon: '⚙️', current: location.pathname === '/admin/workflow-automation' },
+        { name: 'Form Builder', href: '/admin/form-builder', icon: '📋', current: location.pathname === '/admin/form-builder' },
+      ]
+    },
+    {
+      title: 'System',
+      icon: '🔧',
+      items: [
+        { name: 'Users', href: '/admin/users', icon: '👤', current: location.pathname === '/admin/users' },
+        { name: 'API Manager', href: '/admin/api-manager', icon: '🔧', current: location.pathname === '/admin/api-manager' },
+      ]
+    },
+    {
+      title: 'Sales Channels',
+      icon: '🏪',
+      items: [
+        { name: 'Facebook & Instagram', href: '/admin/facebook', icon: '📘', current: location.pathname === '/admin/facebook' },
+        { name: 'FB Shop Integration', href: '/admin/fb-shop', icon: '🛒', badge: 'NEW', current: location.pathname === '/admin/fb-shop' },
+        { name: 'Online Store', href: '/admin/store', icon: '🏪', current: location.pathname === '/admin/store' },
+        { name: 'Google & YouTube', href: '/admin/google', icon: '🔍', current: location.pathname === '/admin/google' },
+        { name: 'Marketplaces', href: '/admin/marketplaces', icon: '🌐', badge: 'NEW', current: location.pathname === '/admin/marketplaces' },
+      ]
+    },
+    {
+      title: 'Operations',
+      icon: '🏭',
+      items: [
+        { name: 'Warehouses', href: '/admin/warehouses', icon: '🏭', badge: 'NEW', current: location.pathname === '/admin/warehouses' },
+        { name: 'POS System', href: '/admin/pos', icon: '💻', badge: 'NEW', current: location.pathname === '/admin/pos' },
+      ]
+    },
   ]
 
-  const navigation = allOptions
+  // Flatten all options for search
+  const allOptions = navigationSections.flatMap(section => 
+    section.items.map(item => ({
+      ...item,
+      category: section.title,
+      description: `${section.title} - ${item.name}`
+    }))
+  )
 
-  const salesChannels = [
-    { name: 'Facebook & Instagram', href: '/facebook', icon: '📘' },
-    { name: 'Online Store', href: '/store', icon: '🏪' },
-  ]
+  const navigation = layoutView === 'all-expanded' 
+    ? navigationSections.flatMap(s => s.items)
+    : navigationSections.flatMap(s => s.items)
 
-  const apps = [
-    { name: 'Google & YouTube', href: '/google', icon: '🔍' },
-    { name: 'Forms', href: '/forms', icon: '📝' },
-  ]
+  // Toggle section collapse
+  const toggleSection = (sectionTitle: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionTitle]: !prev[sectionTitle]
+    }))
+  }
+
+  // Check if section is collapsed
+  const isSectionCollapsed = (sectionTitle: string) => {
+    return collapsedSections[sectionTitle] || false
+  }
 
   // Search functionality
   const handleSearch = (query: string) => {
@@ -164,67 +298,128 @@ const Layout = () => {
             </button>
           </div>
 
+          {/* Layout View Toggle */}
+          <div className="px-4 py-3 border-b border-white/10">
+            <div className="relative">
+              <select
+                value={layoutView}
+                onChange={(e) => setLayoutView(e.target.value as LayoutView)}
+                className="w-full bg-white/10 text-white border border-white/20 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer hover:bg-white/15"
+              >
+                <option value="categorized" className="bg-gray-800 text-white">📁 Categorized View</option>
+                <option value="all-expanded" className="bg-gray-800 text-white">📋 All Expanded</option>
+                <option value="compact" className="bg-gray-800 text-white">📊 Compact View</option>
+              </select>
+            </div>
+          </div>
+
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {/* Main Navigation */}
-            <div className="space-y-1">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`nav-item ${item.current ? 'active' : ''}`}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="font-medium">{item.name}</span>
-                  {item.badge && (
-                    <span className="badge ml-auto">{item.badge}</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-
-            {/* Sales Channels */}
-            <div className="pt-6">
-              <h3 className="px-4 text-xs font-semibold text-white/60 uppercase tracking-wider mb-3">
-                Sales channels
-              </h3>
+          <nav className="flex-1 px-4 py-4 space-y-3 overflow-y-auto">
+            {layoutView === 'categorized' ? (
+              // Categorized View with Collapsible Sections
+              <>
+                {navigationSections.map((section, idx) => {
+                  const isCollapsed = isSectionCollapsed(section.title)
+                  const hasActiveItem = section.items.some(item => item.current)
+                  
+                  return (
+                    <div key={section.title} className="mb-4">
+                      {/* Section Header */}
+                      <button
+                        onClick={() => toggleSection(section.title)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg mb-2 transition-colors ${
+                          hasActiveItem 
+                            ? 'bg-white/20 text-white' 
+                            : 'text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">{section.icon}</span>
+                          <span className="text-sm font-semibold">{section.title}</span>
+                          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                            {section.items.length}
+                          </span>
+                        </div>
+                        {isCollapsed ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronUp className="w-4 h-4" />
+                        )}
+                      </button>
+                      
+                      {/* Section Items */}
+                      {!isCollapsed && (
+                        <div className="space-y-1 ml-3 pl-3 border-l border-white/20">
+                          {section.items.map((item) => (
+                            <Link
+                              key={item.name}
+                              to={item.href}
+                              className={`nav-item ${item.current ? 'active' : ''}`}
+                            >
+                              <span className="text-base">{item.icon}</span>
+                              <span className="text-sm">{item.name}</span>
+                              {item.badge && (
+                                <span className="badge ml-auto">{item.badge}</span>
+                              )}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            ) : layoutView === 'all-expanded' ? (
+              // All Expanded View (Flat List)
               <div className="space-y-1">
-                {salesChannels.map((item) => (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className="nav-item"
-                  >
-                    <span className="text-lg">{item.icon}</span>
-                    <span className="font-medium">{item.name}</span>
-                  </Link>
-                ))}
+                {navigationSections.flatMap(section => 
+                  section.items.map((item) => (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className={`nav-item ${item.current ? 'active' : ''}`}
+                    >
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="font-medium">{item.name}</span>
+                      {item.badge && (
+                        <span className="badge ml-auto">{item.badge}</span>
+                      )}
+                    </Link>
+                  ))
+                )}
               </div>
-            </div>
-
-            {/* Apps */}
-            <div className="pt-6">
-              <h3 className="px-4 text-xs font-semibold text-white/60 uppercase tracking-wider mb-3">
-                Apps
-              </h3>
-              <div className="space-y-1">
-                {apps.map((item) => (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className="nav-item"
-                  >
-                    <span className="text-lg">{item.icon}</span>
-                    <span className="font-medium">{item.name}</span>
-                  </Link>
-                ))}
+            ) : (
+              // Compact View
+              <div className="grid grid-cols-2 gap-2">
+                {navigationSections.flatMap(section => 
+                  section.items.map((item) => (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className={`relative flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
+                        item.current 
+                          ? 'bg-brand-secondary text-white' 
+                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      }`}
+                      title={item.name}
+                    >
+                      <span className="text-xl mb-1">{item.icon}</span>
+                      <span className="text-xs text-center px-1 truncate w-full leading-tight">{item.name}</span>
+                      {item.badge && (
+                        <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  ))
+                )}
               </div>
-            </div>
+            )}
           </nav>
 
           {/* Settings */}
           <div className="p-4 border-t border-white/10">
-            <Link to="/settings" className="nav-item">
+            <Link to="/admin/settings" className="nav-item">
               <span className="text-lg">⚙️</span>
               <span className="font-medium">Settings</span>
             </Link>
@@ -322,16 +517,7 @@ const Layout = () => {
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="text-sm text-gray-600">2 live visitors</span>
               </div>
-              <button className="p-2 text-gray-600 hover:text-gray-900">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4.5 19.5L9 15l4.5 4.5" />
-                </svg>
-              </button>
-              <button className="p-2 text-gray-600 hover:text-gray-900">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4.5 19.5L9 15l4.5 4.5" />
-                </svg>
-              </button>
+              <NotificationBell />
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-brand-secondary rounded-full flex items-center justify-center">
                   <span className="text-white font-bold text-sm">N</span>

@@ -32,7 +32,7 @@ export default function Discounts() {
   const [activeTab, setActiveTab] = useState<'discounts' | 'usage' | 'create'>('discounts')
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   useEffect(() => {
     loadDiscounts()

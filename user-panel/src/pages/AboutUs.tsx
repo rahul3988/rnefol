@@ -36,7 +36,7 @@ export default function AboutUs() {
               </div>
               <div className="bg-white rounded-xl p-6">
                 <img 
-                  src="/IMAGES/placeholder.jpg" 
+                  src="/IMAGES/about-us-story.jpg" 
                   alt="Nefol Story" 
                   className="w-full h-64 object-cover rounded-lg"
                 />
@@ -232,14 +232,14 @@ export default function AboutUs() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a 
-                href="#/shop"
+                href="#/user/shop"
                 className="px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg rounded-lg"
                 style={{backgroundColor: '#1B4965'}}
               >
                 SHOP NOW
               </a>
               <a 
-                href="#/contact"
+                href="#/user/contact"
                 className="px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg rounded-lg"
                 style={{backgroundColor: '#4B97C9'}}
               >

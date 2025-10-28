@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Users, Mail, Phone, MapPin, Calendar, Star, Package } from 'lucide-react'
 
 interface User {
@@ -19,6 +20,7 @@ interface User {
 }
 
 export default function UsersPage() {
+  const navigate = useNavigate()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -32,7 +34,7 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/users`)
+      const response = await fetch(`http://192.168.1.66:4000/api/users`)
       if (response.ok) {
         const data = await response.json()
         setUsers(data)
@@ -156,7 +158,11 @@ export default function UsersPage() {
                 {filteredUsers.map((user) => {
                   const memberLevel = getMemberLevel(user.loyalty_points)
                   return (
-                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <tr 
+                      key={user.id} 
+                      onClick={() => navigate(`/admin/users/${user.id}`)}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">

@@ -10,7 +10,7 @@ export default function CategoryPage() {
 
   useEffect(() => {
     const hash = window.location.hash || '#/'
-    const match = hash.match(/^#\/category\/([^?#]+)/)
+    const match = hash.match(/^#\/user\/category\/([^?#]+)/)
     const cat = match?.[1] || ''
     setCategory(cat)
     
@@ -107,7 +107,7 @@ export default function CategoryPage() {
             {filteredProducts.map((product) => (
               <article key={product.slug} className="bg-white rounded-lg shadow-sm group overflow-hidden">
                 <div className="relative overflow-hidden">
-                  <a href={`#/product/${product.slug}`}>
+                  <a href={`#/user/product/${product.slug}`}>
                     <img 
                       src={product.listImage || (product.pdpImages && product.pdpImages[0])} 
                       alt={product.title} 
@@ -147,7 +147,7 @@ export default function CategoryPage() {
                         ADD TO CART
                       </button>
                       <a 
-                        href={`#/product/${product.slug}`}
+                        href={`#/user/product/${product.slug}`}
                         className="px-4 py-2 text-white text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
                         style={{backgroundColor: '#1B4965'}}
                       >

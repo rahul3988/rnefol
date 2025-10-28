@@ -36,7 +36,7 @@ export default function AIBox() {
 
   const loadAIData = async () => {
     try {
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
       const [featuresRes, tasksRes] = await Promise.all([
         fetch(`${apiBase}/api/ai/features`),
         fetch(`${apiBase}/api/ai/tasks`)
@@ -125,7 +125,7 @@ export default function AIBox() {
             <div>
               <h3 className="text-lg font-semibold">AI Accuracy</h3>
               <p className="text-3xl font-bold">
-                {(features.reduce((sum, f) => sum + f.metrics.accuracy, 0) / features.length).toFixed(1)}%
+                {features.length > 0 ? (features.reduce((sum, f) => sum + (f.metrics?.accuracy || 0), 0) / features.length).toFixed(1) : '0.0'}%
               </p>
             </div>
             <Target className="h-8 w-8" />
@@ -147,7 +147,7 @@ export default function AIBox() {
             <div>
               <h3 className="text-lg font-semibold">Performance Boost</h3>
               <p className="text-3xl font-bold">
-                +{(features.reduce((sum, f) => sum + f.metrics.improvement, 0) / features.length).toFixed(1)}%
+                +{features.length > 0 ? (features.reduce((sum, f) => sum + (f.metrics?.improvement || 0), 0) / features.length).toFixed(1) : '0.0'}%
               </p>
             </div>
             <TrendingUp className="h-8 w-8" />
@@ -211,15 +211,15 @@ export default function AIBox() {
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600 dark:text-slate-400">Accuracy</span>
-                        <span className="font-semibold text-green-600">{feature.metrics.accuracy}%</span>
+                        <span className="font-semibold text-green-600">{feature.metrics?.accuracy || 0}%</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600 dark:text-slate-400">Usage</span>
-                        <span className="font-semibold text-blue-600">{feature.metrics.usage}%</span>
+                        <span className="font-semibold text-blue-600">{feature.metrics?.usage || 0}%</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600 dark:text-slate-400">Improvement</span>
-                        <span className="font-semibold text-purple-600">+{feature.metrics.improvement}%</span>
+                        <span className="font-semibold text-purple-600">+{feature.metrics?.improvement || 0}%</span>
                       </div>
                     </div>
                     

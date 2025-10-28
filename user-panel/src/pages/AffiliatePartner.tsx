@@ -1,46 +1,56 @@
 import React, { useState, useEffect } from 'react'
-import { Users, DollarSign, TrendingUp, Share2, ArrowLeft, Copy, Download, Eye, Calendar, BarChart3, CheckCircle, FileText } from 'lucide-react'
+import { ArrowLeft, BarChart3, Copy, CheckCircle, Clock, AlertCircle, UserPlus, Key, Percent } from 'lucide-react'
+import { getApiBase } from '../utils/apiBase'
 import { useAuth } from '../contexts/AuthContext'
-import { api } from '../services/api'
 
-interface AffiliatePartner {
+interface AffiliateData {
   id: string
+  user_id: string
   referral_code: string
-  total_earnings: number
-  total_referrals: number
-  active_referrals: number
+  referral_link: string
   commission_rate: number
-  status: 'active' | 'pending' | 'suspended' | 'unverified'
-  join_date: string
-  last_payment: string
-  pending_earnings: number
-  verification_code?: string
+  total_referrals: number
+  total_earnings: number
+  conversion_rate: number
   is_verified: boolean
+  created_at: string
+  last_payment: string
 }
 
-interface ReferralData {
+interface Referral {
   id: string
-  name: string
-  email: string
-  signup_date: string
-  total_orders: number
-  total_spent: number
-  commission_earned: number
-  status: 'active' | 'inactive'
+  affiliate_id: string
+  referred_user_id: string
+  referred_user_name: string
+  commission_amount: number
+  status: string
+  created_at: string
 }
 
-export default function AffiliatePartner() {
+interface ApplicationStatus {
+  status: 'not_submitted' | 'pending' | 'approved' | 'rejected'
+  message?: string
+}
+
+const AffiliatePartner: React.FC = () => {
+  // Force refresh - timestamp: 1761382000000
   const { user } = useAuth()
-  const [affiliateData, setAffiliateData] = useState<AffiliatePartner | null>(null)
-  const [referrals, setReferrals] = useState<ReferralData[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
-  const [verificationCode, setVerificationCode] = useState('')
-  const [showVerificationForm, setShowVerificationForm] = useState(false)
+  const [affiliateData, setAffiliateData] = useState<AffiliateData | null>(null)
+  const [referrals, setReferrals] = useState<Referral[]>([])
   const [hasSubmittedApplication, setHasSubmittedApplication] = useState(false)
+  const [applicationStatus, setApplicationStatus] = useState<ApplicationStatus['status']>('not_submitted')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verificationMessage, setVerificationMessage] = useState('')
+  const [isAlreadyVerified, setIsAlreadyVerified] = useState(false)
+  const [showCodeForm, setShowCodeForm] = useState(false)
   const [showApplicationForm, setShowApplicationForm] = useState(false)
-  const [applicationStatus, setApplicationStatus] = useState<'not_submitted' | 'pending' | 'approved' | 'rejected'>('not_submitted')
-  const [formData, setFormData] = useState({
+  const [commissionSettings, setCommissionSettings] = useState({ commission_percentage: 15.0, is_active: true })
+  const [marketingMaterials, setMarketingMaterials] = useState<any>(null)
+  const [nefolCoins, setNefolCoins] = useState(0)
+  const [copySuccess, setCopySuccess] = useState(false)
+  const [applicationForm, setApplicationForm] = useState({
     name: '',
     email: '',
     phone: '',
@@ -53,7 +63,6 @@ export default function AffiliatePartner() {
     experience: '',
     whyJoin: '',
     expectedSales: '',
-    // Address fields
     houseNumber: '',
     street: '',
     building: '',
@@ -65,1517 +74,1133 @@ export default function AffiliatePartner() {
     agreeTerms: false
   })
 
+  // Populate form with user data when user is available
   useEffect(() => {
-    fetchAffiliateData()
-    fetchReferrals()
-    checkApplicationStatus()
+    if (user) {
+      setApplicationForm(prev => ({
+        ...prev,
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+      }))
+    }
+  }, [user])
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setLoading(false)
+      return
+    }
+
+    const initializeData = async () => {
+      try {
+        // Run all initialization tasks in parallel for better performance
+        await Promise.allSettled([
+          checkApplicationStatus(),
+          fetchCommissionSettings(),
+          fetchMarketingMaterials(),
+          fetchNefolCoins()
+        ])
+        console.log('All affiliate data initialized successfully')
+      } catch (error) {
+        console.error('Failed to initialize affiliate data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    initializeData()
+
+    // Set up socket listener for commission updates
+    const setupSocketListener = () => {
+      if ((window as any).io) {
+        (window as any).io.on('commission_settings_updated', (data: any) => {
+          console.log('Commission settings updated:', data)
+          setCommissionSettings(data)
+          // Show notification to user
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Commission Rate Updated', {
+              body: `New commission rate: ${data.commission_percentage}%`,
+              icon: '/favicon.ico'
+            })
+          }
+        })
+      }
+    }
+    setupSocketListener()
+
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Affiliate data loading timeout - setting loading to false')
+        setLoading(false)
+        // Show a helpful message to the user
+        console.log('If you continue to experience issues, please refresh the page or contact support.')
+      }
+    }, 10000) // Increased timeout to 10 seconds
+    return () => clearTimeout(timeout)
   }, [])
 
   const checkApplicationStatus = async () => {
     try {
       const token = localStorage.getItem('token')
-      if (!token) return
-
-      const response = await fetch('/api/affiliate/application-status', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setHasSubmittedApplication(true)
-          setApplicationStatus(data.data.status || 'pending')
-        }
-      }
-    } catch (error) {
-      console.error('Failed to check application status:', error)
-      // For development, check localStorage for application status
-      const savedStatus = localStorage.getItem('affiliateApplicationStatus')
-      if (savedStatus) {
-        setHasSubmittedApplication(true)
-        setApplicationStatus(savedStatus as any)
-      }
-    }
-  }
-
-  const fetchAffiliateData = async () => {
-    try {
-      const token = localStorage.getItem('token')
       if (!token) {
-        console.error('No authentication token found')
+        console.log('No token found, setting loading to false')
         setLoading(false)
         return
       }
 
-      const response = await fetch('/api/affiliate/dashboard', {
+      console.log('Checking application status...')
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000) // Increased timeout
+
+      const response = await fetch(`${getApiBase()}/api/affiliate/application-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      })
+
+      clearTimeout(timeoutId)
+      console.log('Application status response:', response.status)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Application status data:', data)
+        // Backend returns data directly, not wrapped in success property
+        const status = data.status || 'not_submitted'
+        setHasSubmittedApplication(status !== 'not_submitted')
+        setApplicationStatus(status)
+        
+        if (status === 'approved') {
+          await fetchAffiliateData(false)
+          await fetchReferrals()
+          setLoading(false)
+        } else {
+          setLoading(false)
+        }
+      } else {
+        setLoading(false)
+      }
+    } catch (error) {
+      console.error('Failed to check application status:', error)
+      
+      // Handle different types of errors
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          console.warn('Application status check timed out')
+        } else {
+          console.error('Network or other error:', error.message)
+        }
+      }
+      
+      // Try to use saved status as fallback
+      const savedStatus = localStorage.getItem('affiliateApplicationStatus')
+      if (savedStatus) {
+        console.log('Using saved application status:', savedStatus)
+        setHasSubmittedApplication(true)
+        setApplicationStatus(savedStatus as any)
+      } else {
+        console.log('No saved status found, showing application form')
+      }
+      
+      setLoading(false)
+    }
+  }
+
+  const fetchCommissionSettings = async () => {
+    try {
+      const response = await fetch(`${getApiBase()}/api/affiliate/commission-settings`)
+      const data = await response.json()
+      
+      if (response.ok && data.commission_percentage !== undefined) {
+        setCommissionSettings(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch commission settings:', error)
+    }
+  }
+
+  const fetchMarketingMaterials = async () => {
+    try {
+      const response = await fetch(`${getApiBase()}/api/affiliate/marketing-materials`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setMarketingMaterials(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch marketing materials:', error)
+    }
+  }
+
+  const fetchNefolCoins = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        console.log('No token found, skipping Nefol coins fetch')
+        return
+      }
+
+      const response = await fetch(`${getApiBase()}/api/nefol-coins`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setNefolCoins(data.nefol_coins || 0)
+        console.log('Nefol coins fetched successfully:', data.nefol_coins)
+      } else {
+        console.log('Nefol coins API returned:', response.status, response.statusText)
+        // Don't throw error, just log it and continue
+      }
+    } catch (error) {
+      console.error('Failed to fetch Nefol coins:', error)
+      // Don't throw error, just log it and continue
+    }
+  }
+
+  const fetchAffiliateData = async (shouldSetLoading = true) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        console.error('No authentication token found')
+        if (shouldSetLoading) setLoading(false)
+        return
+      }
+
+      console.log('Fetching affiliate dashboard data...')
+      const response = await fetch(`${getApiBase()}/api/affiliate/dashboard`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
 
+      console.log('Dashboard API response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
-        if (data.success) {
-          setAffiliateData({
-            id: data.data.id.toString(),
-            referral_code: `NEFOL${data.data.id}`,
-            total_earnings: data.data.total_earnings || 0,
-            total_referrals: data.data.total_referrals || 0,
-            active_referrals: data.data.completed_referrals || 0,
-            commission_rate: data.data.commission_rate || 15,
-            status: data.data.status === 'active' ? 'active' : 'unverified',
-            join_date: data.data.created_at,
-            last_payment: data.data.last_payment || '',
-            pending_earnings: data.data.pending_earnings || 0,
-            verification_code: data.data.verification_code,
-            is_verified: data.data.status === 'active'
-          })
+        console.log('Dashboard API response data:', data)
+        
+        // Backend returns data directly, not wrapped in success property
+        setAffiliateData(data)
+        console.log('Affiliate data fetched successfully:', data)
+        console.log('Referral link in response:', data.referral_link)
+        
+        // Check if user is already verified
+        if (data.status === 'active' || data.is_verified) {
+          setIsAlreadyVerified(true)
+          console.log('User is verified, showing dashboard')
+        } else {
+          setIsAlreadyVerified(false)
+          console.log('User is not verified, showing verification form')
         }
       } else if (response.status === 404) {
-        // User doesn't have an affiliate account yet
-        setAffiliateData(null)
+        console.log('No affiliate account found - this is normal for new users')
+        setIsAlreadyVerified(false)
+      } else {
+        console.error('Failed to fetch affiliate data:', response.status)
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error response:', errorData)
+        setIsAlreadyVerified(false)
       }
     } catch (error) {
       console.error('Failed to fetch affiliate data:', error)
-      // Fallback to mock data for development
-      const mockAffiliateData: AffiliatePartner = {
-        id: '1',
-        referral_code: 'NEFOL2024',
-        total_earnings: 0,
-        total_referrals: 0,
-        active_referrals: 0,
-        commission_rate: 10,
-        status: 'unverified',
-        join_date: '2024-01-15',
-        last_payment: '',
-        pending_earnings: 0,
-        verification_code: '12345678901234567890',
-        is_verified: false
-      }
-      setAffiliateData(mockAffiliateData)
     } finally {
-      setLoading(false)
+      if (shouldSetLoading) setLoading(false)
     }
   }
 
   const fetchReferrals = async () => {
     try {
-      // Mock referrals data - replace with actual API call later
-      const mockReferrals: ReferralData[] = [
-        {
-          id: '1',
-          name: 'Priya Sharma',
-          email: 'priya@example.com',
-          signup_date: '2024-11-15',
-          total_orders: 3,
-          total_spent: 2500,
-          commission_earned: 250,
-          status: 'active'
-        },
-        {
-          id: '2',
-          name: 'Raj Patel',
-          email: 'raj@example.com',
-          signup_date: '2024-11-10',
-          total_orders: 1,
-          total_spent: 1200,
-          commission_earned: 120,
-          status: 'active'
-        },
-        {
-          id: '3',
-          name: 'Sneha Gupta',
-          email: 'sneha@example.com',
-          signup_date: '2024-10-28',
-          total_orders: 5,
-          total_spent: 4500,
-          commission_earned: 450,
-          status: 'active'
+      const token = localStorage.getItem('token')
+      if (!token) {
+        console.error('No authentication token found')
+        return
+      }
+
+      const response = await fetch(`${getApiBase()}/api/affiliate/referrals`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
-      ]
-      setReferrals(mockReferrals)
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // Backend returns data directly, not wrapped in success property
+        setReferrals(data.referrals || data)
+        console.log('Referrals fetched successfully:', data.referrals || data)
+      } else if (response.status === 404) {
+        console.log('No referrals found - this is normal for new affiliates')
+      } else {
+        console.error('Failed to fetch referrals:', response.status)
+      }
     } catch (error) {
       console.error('Failed to fetch referrals:', error)
-      setReferrals([])
     }
   }
 
-  const copyToClipboard = async (text: string, type: string) => {
+  const handleCodeVerification = async () => {
+    if (!verificationCode.trim()) {
+      setVerificationMessage('Please enter a verification code')
+      return
+    }
+
+    setIsVerifying(true)
+    setVerificationMessage('')
+
     try {
-      // Try modern clipboard API first
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-        alert(`${type} copied to clipboard!`)
-      } else {
-        // Fallback for older browsers or non-secure contexts
-        const textArea = document.createElement('textarea')
-        textArea.value = text
-        textArea.style.position = 'fixed'
-        textArea.style.left = '-999999px'
-        textArea.style.top = '-999999px'
-        document.body.appendChild(textArea)
-        textArea.focus()
-        textArea.select()
-        
-        try {
-          document.execCommand('copy')
-          alert(`${type} copied to clipboard!`)
-        } catch (err) {
-          console.error('Failed to copy text: ', err)
-          alert(`Failed to copy ${type}. Please copy manually: ${text}`)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setVerificationMessage('No authentication token found')
+        setIsVerifying(false)
+        return
+      }
+
+      const response = await fetch(`${getApiBase()}/api/affiliate/verify`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ verificationCode: verificationCode.trim() })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        if (data.message === 'Account already verified') {
+          setVerificationMessage('✅ Code already verified! Loading dashboard...')
+        } else {
+          setVerificationMessage('✅ Verification successful! Loading dashboard...')
         }
         
-        document.body.removeChild(textArea)
+        // Fetch updated affiliate data to show dashboard
+        setTimeout(async () => {
+          try {
+            await fetchAffiliateData(false)
+            await fetchReferrals()
+            setIsAlreadyVerified(true)
+            setVerificationMessage('')
+            setVerificationCode('')
+            setShowCodeForm(false)
+          } catch (error) {
+            console.error('Failed to load dashboard after verification:', error)
+            setVerificationMessage('Verification successful! Please refresh the page to see your dashboard.')
+          }
+        }, 1500)
+      } else {
+        if (data.message === 'This verification code has already been used by another account') {
+          setVerificationMessage('❌ This verification code has already been used by another account')
+        } else {
+          setVerificationMessage(data.message || 'Invalid verification code')
+        }
       }
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
-      alert(`Failed to copy ${type}. Please copy manually: ${text}`)
-    }
-  }
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target
-    if (type === 'checkbox') {
-      setFormData(prev => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }))
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }))
+    } catch (error) {
+      console.error('Verification error:', error)
+      setVerificationMessage('Failed to verify code. Please try again.')
+    } finally {
+      setIsVerifying(false)
     }
   }
 
   const handleApplicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Check if at least one social media handle is provided
-    const hasSocialMedia = formData.instagram.trim() || 
-                          formData.youtube.trim() || 
-                          formData.snapchat.trim() || 
-                          formData.facebook.trim()
-    
-    if (!hasSocialMedia) {
-      alert('Please provide at least one social media profile handle (Instagram, YouTube, Snapchat, or Facebook) to proceed.')
-      return
-    }
-    
-    try {
-      // Send affiliate application to admin
-      const response = await fetch('/api/admin/affiliate-applications', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...formData,
-          applicationDate: new Date().toISOString(),
-          status: 'pending'
-        })
-      })
-      
-      if (response.ok) {
-        alert('Application submitted successfully! We will review your application and get back to you within 24-48 hours.')
-        setShowApplicationForm(false)
-        setHasSubmittedApplication(true)
-        setApplicationStatus('pending')
-        localStorage.setItem('affiliateApplicationStatus', 'pending')
-        // Reset form
-        setFormData({
-          name: '',
-          email: '',
-          phone: '',
-          instagram: '',
-          snapchat: '',
-          youtube: '',
-          facebook: '',
-          followers: '',
-          platform: '',
-          experience: '',
-          whyJoin: '',
-          expectedSales: '',
-          houseNumber: '',
-          street: '',
-          building: '',
-          apartment: '',
-          road: '',
-          city: '',
-          pincode: '',
-          state: '',
-          agreeTerms: false
-        })
-      } else {
-        throw new Error('Failed to submit application')
-      }
-    } catch (error) {
-      console.error('Error submitting affiliate application:', error)
-      // Fallback: still show success message and log to console for now
-      console.log('Affiliate Application (Fallback):', formData)
-      alert('Application submitted successfully! We will review your application and get back to you within 24-48 hours.')
-      setShowApplicationForm(false)
-      setHasSubmittedApplication(true)
-      setApplicationStatus('pending')
-      localStorage.setItem('affiliateApplicationStatus', 'pending')
-      // Reset form
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        instagram: '',
-        snapchat: '',
-        youtube: '',
-        facebook: '',
-        followers: '',
-        platform: '',
-        experience: '',
-        whyJoin: '',
-        expectedSales: '',
-        houseNumber: '',
-        street: '',
-        building: '',
-        apartment: '',
-        road: '',
-        city: '',
-        pincode: '',
-        state: '',
-        agreeTerms: false
-      })
-    }
-  }
-
-  const verifyCode = async () => {
-    if (verificationCode.length !== 20) {
-      alert('Please enter a valid 20-character verification code')
-      return
-    }
-
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('Please log in to verify your account')
+        alert('No authentication token found')
         return
       }
 
-      const response = await fetch('/api/affiliate/verify', {
+      const response = await fetch(`${getApiBase()}/api/affiliate/application`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          verificationCode: verificationCode
-        })
+        body: JSON.stringify(applicationForm)
       })
 
       const data = await response.json()
-      
-      if (data.success) {
-        // Close verification form
-        setShowVerificationForm(false)
-        setVerificationCode('')
+
+      if (response.ok) {
+        alert('Application submitted successfully! You will receive your verification code via email.')
+        setHasSubmittedApplication(true)
+        setApplicationStatus('pending')
+        setShowApplicationForm(false)
+        localStorage.setItem('affiliateApplicationStatus', 'pending')
+      } else if (response.status === 409) {
+        // Handle duplicate application - check if user already has an application
+        const errorMessage = data.message || 'You have already submitted an application'
+        alert(`${errorMessage}. Please check your email for the verification code or contact support if you need assistance.`)
         
-        // Show success message
-        alert('Account verified successfully! Redirecting to your affiliate dashboard...')
+        // Update UI to reflect existing application
+        setHasSubmittedApplication(true)
+        setApplicationStatus('pending')
+        setShowApplicationForm(false)
         
-        // Refresh affiliate data to get updated status
-        await fetchAffiliateData()
-        
-        // Scroll to top to show the dashboard
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-        
-        // Force re-render to show dashboard view
-        // The component will automatically show the dashboard since affiliateData will now have verified status
+        // Refresh application status to get current state
+        setTimeout(() => {
+          checkApplicationStatus()
+        }, 1000)
       } else {
-        alert(data.message || 'Invalid verification code. Please check and try again.')
+        alert(data.message || 'Failed to submit application. Please try again or contact support.')
       }
     } catch (error) {
-      console.error('Error verifying code:', error)
-      alert('Error verifying code. Please try again.')
+      console.error('Application submission error:', error)
+      alert('Failed to submit application. Please try again.')
     }
   }
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: BarChart3 },
-    { id: 'referrals', label: 'Referrals', icon: Users },
-    { id: 'earnings', label: 'Earnings', icon: DollarSign },
-    { id: 'materials', label: 'Marketing Materials', icon: Download }
-  ]
+  const copyReferralLink = () => {
+    if (affiliateData?.referral_link) {
+      // Check if clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(affiliateData.referral_link)
+          .then(() => {
+            setCopySuccess(true)
+            setTimeout(() => setCopySuccess(false), 2000)
+          })
+          .catch((error) => {
+            console.warn('Clipboard API failed, using fallback:', error)
+            // Fallback for when clipboard API fails
+            fallbackCopyToClipboard(affiliateData.referral_link)
+          })
+      } else {
+        // Fallback for browsers that don't support clipboard API
+        fallbackCopyToClipboard(affiliateData.referral_link)
+      }
+    }
+  }
+
+  const fallbackCopyToClipboard = (text: string) => {
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      textArea.style.top = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      
+      const successful = document.execCommand('copy')
+      document.body.removeChild(textArea)
+      
+      if (successful) {
+        setCopySuccess(true)
+        setTimeout(() => setCopySuccess(false), 2000)
+      } else {
+        console.error('Fallback copy failed')
+        // Show user-friendly message
+        alert('Unable to copy to clipboard. Please copy the link manually.')
+      }
+    } catch (error) {
+      console.error('Copy failed:', error)
+      alert('Unable to copy to clipboard. Please copy the link manually.')
+    }
+  }
+
+  const downloadMaterial = (file: any) => {
+    if (file.type === 'folder') {
+      // For folders, we'll show a modal with all files in that folder
+      // For now, just open the folder URL
+      window.open(`${getApiBase()}${file.url}`, '_blank')
+    } else {
+      // For individual files, download them
+      const link = document.createElement('a')
+      link.href = `${getApiBase()}${file.url}`
+      link.download = file.name
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  }
 
   if (loading) {
     return (
-      <main className="py-10 dark:bg-slate-900 min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </main>
-    )
-  }
-
-  // Show different content based on application status
-  if (!affiliateData && !hasSubmittedApplication) {
-    return (
       <main className="py-10 dark:bg-slate-900 min-h-screen">
         <div className="mx-auto max-w-6xl px-4">
-          {/* Header with Back Button */}
-          <div className="mb-8">
-            <button 
-              onClick={() => window.location.hash = '#/profile'}
-              className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors mb-4"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Profile
-            </button>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Affiliate Partner Program</h1>
-            <p className="text-slate-600 dark:text-slate-400">Join our affiliate program and start earning commissions</p>
-          </div>
-
-          {/* Two Options */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            {/* Option 1: Already Submitted */}
-            <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-8 border border-green-200 dark:border-green-800">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-green-800 dark:text-green-200 mb-3">
-                  Already Submitted Application?
-                </h3>
-                <p className="text-green-700 dark:text-green-300 mb-6">
-                  If you've already submitted your affiliate application and received a verification code, enter it here to activate your account.
-                </p>
-                <button
-                  onClick={() => setShowVerificationForm(true)}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-slate-600 dark:text-slate-400 mb-2">Loading affiliate data...</p>
+              <p className="text-sm text-slate-500 dark:text-slate-500">This may take a few moments</p>
+              <div className="mt-4">
+                <button 
+                  onClick={() => setLoading(false)}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  Enter Verification Code
+                  Skip loading and continue
                 </button>
-              </div>
-            </div>
-
-            {/* Option 2: Not Submitted Yet */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-8 border border-blue-200 dark:border-blue-800">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FileText className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-blue-800 dark:text-blue-200 mb-3">
-                  Not Submitted Yet?
-                </h3>
-                <p className="text-blue-700 dark:text-blue-300 mb-6">
-                  Apply to become an affiliate partner and start earning commissions by promoting our products.
-                </p>
-                <button
-                  onClick={() => setShowApplicationForm(true)}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-                >
-                  Submit Application Now
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Benefits Section */}
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-8 border border-slate-200 dark:border-slate-700">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6 text-center">Why Join Our Affiliate Program?</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-xl">💰</span>
-                </div>
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Earn Up to 15% Commission</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Get paid for every sale you generate through your unique affiliate links</p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-xl">📊</span>
-                </div>
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Real-time Tracking</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Monitor your performance with detailed analytics and reports</p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-xl">🎨</span>
-                </div>
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Marketing Materials</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Access high-quality banners, images, and promotional content</p>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Verification Form Modal */}
-        {showVerificationForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="relative max-w-md w-full bg-white dark:bg-slate-800 rounded-lg p-6 shadow-2xl">
-              <button
-                onClick={() => setShowVerificationForm(false)}
-                className="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-600"
-              >
-                ×
-              </button>
-              
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Enter Verification Code</h2>
-                <p className="text-slate-600 dark:text-slate-400">Enter the 20-character verification code (letters and numbers) sent to you after application approval</p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Verification Code
-                  </label>
-                  <input
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20))}
-                    placeholder="ABC123DEF456GHI789JKL"
-                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100 text-center text-lg tracking-widest"
-                    maxLength={20}
-                  />
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Enter the 20-character code exactly as provided
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={verifyCode}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Verify Account
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowVerificationForm(false)
-                      setVerificationCode('')
-                    }}
-                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Application Form Modal */}
-        {showApplicationForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-white dark:bg-slate-800 rounded-lg p-8 shadow-2xl">
-              <button
-                onClick={() => setShowApplicationForm(false)}
-                className="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-600"
-              >
-                ×
-              </button>
-              
-              <div className="mb-6">
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Affiliate Program Application</h2>
-                <p className="mt-2 text-slate-600 dark:text-slate-400">Fill out the form below to apply for our affiliate program</p>
-              </div>
-
-              <form onSubmit={handleApplicationSubmit} className="space-y-6">
-                {/* Personal Information */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="name">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      id="name"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleInputChange}
-                      required
-                      className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="email">
-                      Email Address *
-                    </label>
-                    <input
-                      type="email"
-                      id="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      required
-                      className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="phone">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      id="phone"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      required
-                      className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-
-                {/* Social Media Information */}
-                <div>
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    Social Media Profiles <span className="text-red-500">*</span>
-                  </h3>
-                  <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-                    Please provide at least one social media profile handle
-                  </p>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="instagram">
-                        Instagram Handle
-                      </label>
-                      <input
-                        type="text"
-                        id="instagram"
-                        name="instagram"
-                        value={formData.instagram}
-                        onChange={handleInputChange}
-                        placeholder="@yourusername"
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="youtube">
-                        YouTube Channel
-                      </label>
-                      <input
-                        type="url"
-                        id="youtube"
-                        name="youtube"
-                        value={formData.youtube}
-                        onChange={handleInputChange}
-                        placeholder="https://youtube.com/@yourchannel"
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="snapchat">
-                        Snapchat Handle
-                      </label>
-                      <input
-                        type="text"
-                        id="snapchat"
-                        name="snapchat"
-                        value={formData.snapchat}
-                        onChange={handleInputChange}
-                        placeholder="@yourusername"
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="facebook">
-                        Facebook Page
-                      </label>
-                      <input
-                        type="url"
-                        id="facebook"
-                        name="facebook"
-                        value={formData.facebook}
-                        onChange={handleInputChange}
-                        placeholder="https://facebook.com/yourpage"
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="followers">
-                      Total Followers/Subscribers *
-                    </label>
-                    <select
-                      id="followers"
-                      name="followers"
-                      value={formData.followers}
-                      onChange={handleInputChange}
-                      required
-                      className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                    >
-                      <option value="">Select range</option>
-                      <option value="1k-5k">1,000 - 5,000</option>
-                      <option value="5k-10k">5,000 - 10,000</option>
-                      <option value="10k-25k">10,000 - 25,000</option>
-                      <option value="25k-50k">25,000 - 50,000</option>
-                      <option value="50k-100k">50,000 - 100,000</option>
-                      <option value="100k+">100,000+</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="platform">
-                      Primary Platform *
-                    </label>
-                    <select
-                      id="platform"
-                      name="platform"
-                      value={formData.platform}
-                      onChange={handleInputChange}
-                      required
-                      className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                    >
-                      <option value="">Select platform</option>
-                      <option value="instagram">Instagram</option>
-                      <option value="youtube">YouTube</option>
-                      <option value="tiktok">TikTok</option>
-                      <option value="blog">Blog/Website</option>
-                      <option value="facebook">Facebook</option>
-                      <option value="twitter">Twitter</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Experience */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="experience">
-                    Affiliate Marketing Experience *
-                  </label>
-                  <textarea
-                    id="experience"
-                    name="experience"
-                    value={formData.experience}
-                    onChange={handleInputChange}
-                    rows={3}
-                    placeholder="Describe your experience with affiliate marketing, previous partnerships, and success stories..."
-                    required
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 p-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="whyJoin">
-                    Why do you want to join Nefol's affiliate program? *
-                  </label>
-                  <textarea
-                    id="whyJoin"
-                    name="whyJoin"
-                    value={formData.whyJoin}
-                    onChange={handleInputChange}
-                    rows={3}
-                    placeholder="Tell us why you're interested in promoting Nefol products and how you align with our brand values..."
-                    required
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 p-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="expectedSales">
-                    Expected Monthly Sales Volume
-                  </label>
-                  <select
-                    id="expectedSales"
-                    name="expectedSales"
-                    value={formData.expectedSales}
-                    onChange={handleInputChange}
-                    className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                  >
-                    <option value="">Select range</option>
-                    <option value="0-5k">₹0 - ₹5,000</option>
-                    <option value="5k-10k">₹5,000 - ₹10,000</option>
-                    <option value="10k-25k">₹10,000 - ₹25,000</option>
-                    <option value="25k-50k">₹25,000 - ₹50,000</option>
-                    <option value="50k+">₹50,000+</option>
-                  </select>
-                </div>
-
-                {/* Address Section */}
-                <div>
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Address Information</h3>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="houseNumber">
-                        House Number *
-                      </label>
-                      <input
-                        type="text"
-                        id="houseNumber"
-                        name="houseNumber"
-                        value={formData.houseNumber}
-                        onChange={handleInputChange}
-                        placeholder="123"
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="street">
-                        Street *
-                      </label>
-                      <input
-                        type="text"
-                        id="street"
-                        name="street"
-                        value={formData.street}
-                        onChange={handleInputChange}
-                        placeholder="Main Street"
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="building">
-                        Building/Apartment
-                      </label>
-                      <input
-                        type="text"
-                        id="building"
-                        name="building"
-                        value={formData.building}
-                        onChange={handleInputChange}
-                        placeholder="Tower A, Apt 4B"
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="road">
-                        Road/Locality *
-                      </label>
-                      <input
-                        type="text"
-                        id="road"
-                        name="road"
-                        value={formData.road}
-                        onChange={handleInputChange}
-                        placeholder="MG Road, Sector 15"
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="city">
-                        City *
-                      </label>
-                      <input
-                        type="text"
-                        id="city"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        placeholder="Mumbai"
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="pincode">
-                        Pincode *
-                      </label>
-                      <input
-                        type="text"
-                        id="pincode"
-                        name="pincode"
-                        value={formData.pincode}
-                        onChange={handleInputChange}
-                        placeholder="400001"
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="state">
-                        State *
-                      </label>
-                      <select
-                        id="state"
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        required
-                        className="h-12 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100"
-                      >
-                        <option value="">Select State</option>
-                        <option value="Andhra Pradesh">Andhra Pradesh</option>
-                        <option value="Arunachal Pradesh">Arunachal Pradesh</option>
-                        <option value="Assam">Assam</option>
-                        <option value="Bihar">Bihar</option>
-                        <option value="Chhattisgarh">Chhattisgarh</option>
-                        <option value="Goa">Goa</option>
-                        <option value="Gujarat">Gujarat</option>
-                        <option value="Haryana">Haryana</option>
-                        <option value="Himachal Pradesh">Himachal Pradesh</option>
-                        <option value="Jharkhand">Jharkhand</option>
-                        <option value="Karnataka">Karnataka</option>
-                        <option value="Kerala">Kerala</option>
-                        <option value="Madhya Pradesh">Madhya Pradesh</option>
-                        <option value="Maharashtra">Maharashtra</option>
-                        <option value="Manipur">Manipur</option>
-                        <option value="Meghalaya">Meghalaya</option>
-                        <option value="Mizoram">Mizoram</option>
-                        <option value="Nagaland">Nagaland</option>
-                        <option value="Odisha">Odisha</option>
-                        <option value="Punjab">Punjab</option>
-                        <option value="Rajasthan">Rajasthan</option>
-                        <option value="Sikkim">Sikkim</option>
-                        <option value="Tamil Nadu">Tamil Nadu</option>
-                        <option value="Telangana">Telangana</option>
-                        <option value="Tripura">Tripura</option>
-                        <option value="Uttar Pradesh">Uttar Pradesh</option>
-                        <option value="Uttarakhand">Uttarakhand</option>
-                        <option value="West Bengal">West Bengal</option>
-                        <option value="Delhi">Delhi</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Terms Agreement */}
-                <div className="flex items-start space-x-3">
-                  <input
-                    type="checkbox"
-                    id="agreeTerms"
-                    name="agreeTerms"
-                    checked={formData.agreeTerms}
-                    onChange={handleInputChange}
-                    required
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-200"
-                  />
-                  <label htmlFor="agreeTerms" className="text-sm text-slate-600 dark:text-slate-400">
-                    I agree to the <a href="#" className="text-blue-600 hover:underline">Affiliate Program Terms</a> and 
-                    <a href="#" className="text-blue-600 hover:underline"> Privacy Policy</a>. I understand that I must comply with 
-                    FTC guidelines and disclose my affiliate relationship with Nefol. *
-                  </label>
-                </div>
-
-                {/* Submit Button */}
-                <div className="flex gap-4 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowApplicationForm(false)}
-                    className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-6 py-3 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 transition-colors"
-                  >
-                    Submit Application
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </main>
     )
   }
 
-  // Show application status if submitted but not approved
-  if (hasSubmittedApplication && !affiliateData) {
+  // If user is verified and has affiliate data, show dashboard
+  if (isAlreadyVerified && affiliateData) {
     return (
       <main className="py-10 dark:bg-slate-900 min-h-screen">
         <div className="mx-auto max-w-6xl px-4">
           {/* Header with Back Button */}
           <div className="mb-8">
             <button 
-              onClick={() => window.location.hash = '#/profile'}
+              onClick={() => window.location.hash = '#/user/profile'}
               className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors mb-4"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to Profile
             </button>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Affiliate Application Status</h1>
-            <p className="text-slate-600 dark:text-slate-400">Track your affiliate application progress</p>
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Affiliate Partner Dashboard</h1>
+                <p className="text-slate-600 dark:text-slate-400">Manage your affiliate program and track your earnings</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const dashboardContent = document.getElementById('dashboard-content')
+                    if (dashboardContent) {
+                      dashboardContent.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold flex items-center gap-2"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  Dashboard
+                </button>
+                <div className="flex items-center gap-2 px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
+                  <CheckCircle className="h-4 w-4" />
+                  Verified
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Application Status */}
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-8 border border-slate-200 dark:border-slate-700">
-            <div className="text-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                applicationStatus === 'pending' ? 'bg-yellow-100 dark:bg-yellow-900/20' :
-                applicationStatus === 'approved' ? 'bg-green-100 dark:bg-green-900/20' :
-                'bg-red-100 dark:bg-red-900/20'
-              }`}>
-                {applicationStatus === 'pending' ? (
-                  <span className="text-2xl">⏳</span>
-                ) : applicationStatus === 'approved' ? (
-                  <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
-                ) : (
-                  <span className="text-2xl">❌</span>
-                )}
+          {/* Dashboard Content */}
+          <div id="dashboard-content">
+            {/* Quick Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+              <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">Total Earnings</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">₹{(affiliateData?.total_earnings || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xl">💰</span>
+                  </div>
+                </div>
               </div>
-              
-              <h2 className={`text-2xl font-bold mb-4 ${
-                applicationStatus === 'pending' ? 'text-yellow-600 dark:text-yellow-400' :
-                applicationStatus === 'approved' ? 'text-green-600 dark:text-green-400' :
-                'text-red-600 dark:text-red-400'
-              }`}>
-                {applicationStatus === 'pending' ? 'Application Under Review' :
-                 applicationStatus === 'approved' ? 'Application Approved!' :
-                 'Application Rejected'}
-              </h2>
-              
-              <p className="text-slate-600 dark:text-slate-400 mb-6">
-                {applicationStatus === 'pending' ? 
-                  'Your affiliate application is currently under review. We will notify you within 24-48 hours with the results.' :
-                 applicationStatus === 'approved' ? 
-                  'Congratulations! Your application has been approved. You should receive a verification code via email to activate your affiliate account.' :
-                  'Unfortunately, your application was not approved at this time. You can reapply after 30 days.'}
-              </p>
 
-              {applicationStatus === 'approved' && (
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Referrals</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{affiliateData?.total_referrals || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xl">👥</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-purple-600 dark:text-purple-400 font-medium">Conversion Rate</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{(affiliateData?.conversion_rate || 0).toFixed(1)}%</p>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xl">📈</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">Commission Rate</p>
+                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{affiliateData?.commission_rate || 0}%</p>
+                  </div>
+                  <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xl">💎</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">Nefol Coins</p>
+                    <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">{nefolCoins}</p>
+                    <p className="text-xs text-yellow-500 dark:text-yellow-400 mt-1">Earned from referrals</p>
+                  </div>
+                  <div className="w-12 h-12 bg-yellow-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xl">🪙</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Referral Link Section */}
+            <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600 mb-8">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">Your Referral Link</h2>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 bg-slate-50 dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600">
+                  <code className="text-sm text-slate-700 dark:text-slate-300 break-all">
+                    {affiliateData?.referral_link || 'Loading...'}
+                  </code>
+                </div>
                 <button
-                  onClick={() => setShowVerificationForm(true)}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                  onClick={copyReferralLink}
+                  className={`px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 ${
+                    copySuccess 
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
-                  Enter Verification Code
+                  <Copy className="h-4 w-4" />
+                  {copySuccess ? 'Copied!' : 'Copy Link'}
                 </button>
+              </div>
+            </div>
+
+            {/* Recent Referrals */}
+            <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600 mb-8">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">Recent Referrals</h2>
+              {referrals.length > 0 ? (
+                <div className="space-y-4">
+                  {referrals.slice(0, 5).map((referral) => (
+                    <div key={referral.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
+                          <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                            {referral.referred_user_name?.charAt(0) || 'U'}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">
+                            {referral.referred_user_name || 'Anonymous User'}
+                          </p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            {new Date(referral.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-green-600 dark:text-green-400">
+                          ₹{(referral.commission_amount || 0).toFixed(2)}
+                        </p>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 capitalize">
+                          {referral.status}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-slate-400 text-2xl">👥</span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400">No referrals yet</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-500">Start sharing your referral link to earn commissions!</p>
+                </div>
+              )}
+            </div>
+
+            {/* Marketing Materials */}
+            <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">Marketing Materials</h2>
+              {marketingMaterials ? (
+                <div className="space-y-8">
+                  {/* Social Media Posts */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <span className="text-2xl">📱</span>
+                      Social Media Posts
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {marketingMaterials.socialMediaPosts?.map((category: any) => (
+                        <div key={category.id} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                          <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">{category.name}</h4>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{category.description}</p>
+                          <div className="space-y-2">
+                            {category.files.map((file: any, index: number) => (
+                              <button
+                                key={index}
+                                onClick={() => downloadMaterial(file)}
+                                className="w-full text-left px-3 py-2 bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-sm"
+                              >
+                                📄 {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Product Images */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <span className="text-2xl">📄</span>
+                      Product Images
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {marketingMaterials.productImages?.map((category: any) => (
+                        <div key={category.id} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                          <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">{category.name}</h4>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{category.description}</p>
+                          <div className="space-y-2">
+                            {category.files.map((file: any, index: number) => (
+                              <button
+                                key={index}
+                                onClick={() => downloadMaterial(file)}
+                                className="w-full text-left px-3 py-2 bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-sm"
+                              >
+                                📁 {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Email Templates */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <span className="text-2xl">📧</span>
+                      Email Templates
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {marketingMaterials.emailTemplates?.map((category: any) => (
+                        <div key={category.id} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                          <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">{category.name}</h4>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{category.description}</p>
+                          <div className="space-y-2">
+                            {category.files.map((file: any, index: number) => (
+                              <button
+                                key={index}
+                                onClick={() => downloadMaterial(file)}
+                                className="w-full text-left px-3 py-2 bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-sm"
+                              >
+                                📄 {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Videos */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <span className="text-2xl">🎥</span>
+                      Product Videos
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {marketingMaterials.videos?.map((category: any) => (
+                        <div key={category.id} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                          <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">{category.name}</h4>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{category.description}</p>
+                          <div className="space-y-2">
+                            {category.files.map((file: any, index: number) => (
+                              <button
+                                key={index}
+                                onClick={() => downloadMaterial(file)}
+                                className="w-full text-left px-3 py-2 bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-sm"
+                              >
+                                🎬 {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-slate-600 dark:text-slate-400">Loading marketing materials...</p>
+                </div>
               )}
             </div>
           </div>
         </div>
-
-        {/* Verification Form Modal */}
-        {showVerificationForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="relative max-w-md w-full bg-white dark:bg-slate-800 rounded-lg p-6 shadow-2xl">
-              <button
-                onClick={() => setShowVerificationForm(false)}
-                className="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-600"
-              >
-                ×
-              </button>
-              
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Enter Verification Code</h2>
-                <p className="text-slate-600 dark:text-slate-400">Enter the 20-character verification code (letters and numbers) sent to you after application approval</p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Verification Code
-                  </label>
-                  <input
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20))}
-                    placeholder="ABC123DEF456GHI789JKL"
-                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:bg-slate-700 dark:text-slate-100 text-center text-lg tracking-widest"
-                    maxLength={20}
-                  />
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Enter the 20-character code exactly as provided
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={verifyCode}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Verify Account
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowVerificationForm(false)
-                      setVerificationCode('')
-                    }}
-                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     )
   }
 
+  // Main affiliate partner page - show options for code entry or application
   return (
     <main className="py-10 dark:bg-slate-900 min-h-screen">
-      <div className="mx-auto max-w-6xl px-4">
-        {/* Header with Back Button */}
+      <div className="mx-auto max-w-4xl px-4">
+        {/* Header */}
         <div className="mb-8">
           <button 
-            onClick={() => window.location.hash = '#/profile'}
+            onClick={() => window.location.hash = '#/user/profile'}
             className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors mb-4"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Profile
           </button>
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Affiliate Partner Dashboard</h1>
-              <p className="text-slate-600 dark:text-slate-400">Manage your affiliate program and track your earnings</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 text-sm rounded-full ${
-                affiliateData.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                affiliateData.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                affiliateData.status === 'unverified' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
-                'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
-              }`}>
-                {affiliateData.status === 'active' ? 'Active' : 
-                 affiliateData.status === 'pending' ? 'Pending' : 
-                 affiliateData.status === 'unverified' ? 'Unverified' : 'Suspended'}
-              </span>
-            </div>
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Affiliate Partner Program</h1>
+            <p className="text-slate-600 dark:text-slate-400">Join our affiliate program and start earning commissions</p>
           </div>
         </div>
 
-        {/* Verification Form */}
-        {affiliateData && !affiliateData.is_verified && (
-          <div className="bg-gradient-to-r from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 rounded-lg p-6 mb-8 border border-orange-200 dark:border-orange-800">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-orange-600 dark:text-orange-400 text-xl">🔐</span>
-                </div>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-200 mb-2">
-                  Account Verification Required
-                </h3>
-                <p className="text-orange-700 dark:text-orange-300 mb-4">
-                  To activate your affiliate account, please enter the 20-character verification code (letters and numbers) that was sent to you after your application was approved.
-                </p>
-                
-                {!showVerificationForm ? (
-                  <button
-                    onClick={() => setShowVerificationForm(true)}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                  >
-                    Enter Verification Code
-                  </button>
+        {/* Application Status Display */}
+        {hasSubmittedApplication && (
+          <div className="mb-8">
+            <div className={`rounded-lg p-6 border ${
+              applicationStatus === 'approved' 
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                : applicationStatus === 'pending'
+                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+            }`}>
+              <div className="flex items-center gap-3 mb-2">
+                {applicationStatus === 'approved' ? (
+                  <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                ) : applicationStatus === 'pending' ? (
+                  <Clock className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
                 ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-orange-800 dark:text-orange-200 mb-2">
-                        Enter 20-Digit Verification Code
-                      </label>
-                      <input
-                        type="text"
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20))}
-                        placeholder="ABC123DEF456GHI789JKL"
-                        className="w-full px-4 py-3 border border-orange-300 dark:border-orange-600 rounded-lg focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-200 dark:bg-slate-700 dark:text-slate-100 text-center text-lg tracking-widest"
-                        maxLength={20}
-                      />
-                      <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
-                        Enter the 20-character code exactly as provided
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={verifyCode}
-                        className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                      >
-                        Verify Account
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowVerificationForm(false)
-                          setVerificationCode('')
-                        }}
-                        className="px-6 py-2 border border-orange-300 dark:border-orange-600 text-orange-700 dark:text-orange-300 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+                  <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
                 )}
+                <h3 className={`text-lg font-semibold ${
+                  applicationStatus === 'approved' 
+                    ? 'text-green-800 dark:text-green-200' 
+                    : applicationStatus === 'pending'
+                    ? 'text-yellow-800 dark:text-yellow-200'
+                    : 'text-red-800 dark:text-red-200'
+                }`}>
+                  {applicationStatus === 'approved' 
+                    ? (isAlreadyVerified ? 'Application Approved & Verified!' : 'Application Approved!')
+                    : applicationStatus === 'pending'
+                    ? 'Application Under Review'
+                    : 'Application Rejected'
+                  }
+                </h3>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Content - Only show if verified */}
-        {affiliateData.is_verified ? (
-          <>
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">Total Earnings</p>
-                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">₹{affiliateData.total_earnings.toFixed(2)}</p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-              <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Referrals</p>
-                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{affiliateData.total_referrals}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-              <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-purple-600 dark:text-purple-400 font-medium">Pending Earnings</p>
-                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">₹{affiliateData.pending_earnings.toFixed(2)}</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-purple-600 dark:text-purple-400" />
-                </div>
-              </div>
-              <div className="bg-gradient-to-r from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">Commission Rate</p>
-                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{affiliateData.commission_rate}%</p>
-                  </div>
-                  <BarChart3 className="h-8 w-8 text-orange-600 dark:text-orange-400" />
-                </div>
-              </div>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div className="mb-8">
-              <nav className="flex space-x-8 border-b border-slate-200 dark:border-slate-700">
-                {tabs.map((tab) => {
-                  const IconComponent = tab.icon
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-2 px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
-                        activeTab === tab.id
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      <IconComponent className="h-4 w-4" />
-                      {tab.label}
-                    </button>
-                  )
-                })}
-              </nav>
-            </div>
-
-            {/* Tab Content */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Referral Code Section */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-6">
-                <h3 className="text-lg font-semibold dark:text-slate-100 mb-4">Your Referral Code</h3>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 bg-white dark:bg-slate-700 rounded-lg p-4 border border-slate-200 dark:border-slate-600">
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Share this code with friends</p>
-                    <p className="text-xl font-bold text-slate-900 dark:text-slate-100 font-mono">{affiliateData.referral_code}</p>
-                  </div>
-                  <button 
-                    onClick={() => copyToClipboard(affiliateData.referral_code, 'Referral code')}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                  >
-                    <Copy className="h-4 w-4" />
-                    Copy
-                  </button>
-                </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
-                  Earn {affiliateData.commission_rate}% commission on every successful referral!
-                </p>
-              </div>
-
-              {/* Referral Link */}
-              <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                <h3 className="text-lg font-semibold dark:text-slate-100 mb-3">Your Referral Link</h3>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 bg-slate-50 dark:bg-slate-600 rounded-lg p-3 border border-slate-200 dark:border-slate-600">
-                    <p className="text-sm text-slate-600 dark:text-slate-400 break-all">
-                      https://nefol.com/ref/{affiliateData.referral_code}
-                    </p>
-                  </div>
-                  <button 
-                    onClick={() => copyToClipboard(`https://nefol.com/ref/${affiliateData.referral_code}`, 'Referral link')}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                  >
-                    <Copy className="h-4 w-4" />
-                    Copy Link
-                  </button>
-                </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-3">
-                  Share this link on social media, email, or any platform to start earning commissions!
-                </p>
-              </div>
-
-              {/* Partner Statistics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <h3 className="text-lg font-semibold dark:text-slate-100 mb-4">Partner Statistics</h3>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600 dark:text-slate-400">Active Referrals</span>
-                      <span className="font-semibold dark:text-slate-100">{affiliateData.active_referrals}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600 dark:text-slate-400">Commission Rate</span>
-                      <span className="font-semibold dark:text-slate-100">{affiliateData.commission_rate}%</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600 dark:text-slate-400">Partner Since</span>
-                      <span className="font-semibold dark:text-slate-100">
-                        {new Date(affiliateData.join_date).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600 dark:text-slate-400">Last Payment</span>
-                      <span className="font-semibold dark:text-slate-100">
-                        {new Date(affiliateData.last_payment).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <h3 className="text-lg font-semibold dark:text-slate-100 mb-4">Quick Actions</h3>
-                  <div className="space-y-3">
-                    <button 
-                      onClick={() => copyToClipboard(`https://nefol.com/ref/${affiliateData.referral_code}`, 'Referral link')}
-                      className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Share2 className="h-4 w-4" />
-                      Share Referral Link
-                    </button>
-                    <button 
-                      onClick={() => window.location.hash = '#/referral-history'}
-                      className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      View Referral History
-                    </button>
-                    <button 
-                      onClick={() => window.location.hash = '#/reports'}
-                      className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      Download Reports
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Referrals Tab */}
-          {activeTab === 'referrals' && (
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-semibold dark:text-slate-100">Your Referrals</h2>
-                <div className="text-sm text-slate-600 dark:text-slate-400">
-                  Total: {referrals.length} referrals
-                </div>
-              </div>
+              <p className={`${
+                applicationStatus === 'approved' 
+                  ? 'text-green-700 dark:text-green-300' 
+                  : applicationStatus === 'pending'
+                  ? 'text-yellow-700 dark:text-yellow-300'
+                  : 'text-red-700 dark:text-red-300'
+              }`}>
+                {applicationStatus === 'approved' 
+                  ? (isAlreadyVerified 
+                      ? 'Your application has been approved and your account is verified! You can access your affiliate dashboard.'
+                      : 'Your application has been approved! You can now verify your account with the code sent to your email.'
+                    )
+                  : applicationStatus === 'pending'
+                  ? 'Your application is being reviewed. You will receive an email with your verification code once approved. If you haven\'t received an email, please check your spam folder or contact support.'
+                  : 'Your application was not approved. Please contact support for more information.'
+                }
+              </p>
               
-              {referrals.length === 0 ? (
-                <div className="text-center py-12">
-                  <Users className="h-16 w-16 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">No Referrals Yet</h3>
-                  <p className="text-slate-600 dark:text-slate-400 mb-6">Start sharing your referral link to earn commissions</p>
-                  <button className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    Share Referral Link
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {referrals.map((referral) => (
-                    <div key={referral.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="font-semibold dark:text-slate-100">{referral.name}</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">{referral.email}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-500">
-                            Joined: {new Date(referral.signup_date).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            referral.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
-                          }`}>
-                            {referral.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{referral.total_orders}</p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Orders</p>
-                        </div>
-                        <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <p className="text-lg font-bold text-green-600 dark:text-green-400">₹{referral.total_spent}</p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Total Spent</p>
-                        </div>
-                        <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                          <p className="text-lg font-bold text-purple-600 dark:text-purple-400">₹{referral.commission_earned}</p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Commission</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+              {applicationStatus === 'pending' && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    <strong>Need help?</strong> If you're having trouble finding your verification code or have questions about your application, please contact our support team.
+                  </p>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Earnings Tab */}
-          {activeTab === 'earnings' && (
-            <div>
-              <h2 className="text-2xl font-semibold dark:text-slate-100 mb-6">Earnings Overview</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">Total Earnings</h3>
-                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">₹{affiliateData.total_earnings.toFixed(2)}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">All time earnings from referrals</p>
-                </div>
-                <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">Pending Earnings</h3>
-                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">₹{affiliateData.pending_earnings.toFixed(2)}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">Available for next payout</p>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                <h3 className="text-lg font-semibold dark:text-slate-100 mb-4">Payment Information</h3>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 dark:text-slate-400">Payment Method</span>
-                    <span className="font-semibold dark:text-slate-100">Bank Transfer</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 dark:text-slate-400">Minimum Payout</span>
-                    <span className="font-semibold dark:text-slate-100">₹2,500</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 dark:text-slate-400">Payment Schedule</span>
-                    <span className="font-semibold dark:text-slate-100">Monthly</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 dark:text-slate-400">Last Payment</span>
-                    <span className="font-semibold dark:text-slate-100">
-                      {new Date(affiliateData.last_payment).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Marketing Materials Tab */}
-          {activeTab === 'materials' && (
-            <div>
-              <h2 className="text-2xl font-semibold dark:text-slate-100 mb-6">Marketing Materials</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">🖼️</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Product Images</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">High-quality product photos for social media</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">📱</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Social Media Banners</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Ready-to-use banners for Instagram, Facebook</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">📝</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Copy Templates</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Pre-written captions and descriptions</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">🎥</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Video Content</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Product demonstration videos</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">📊</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Brand Guidelines</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Logo usage and brand standards</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/20 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">📧</span>
-                    </div>
-                    <h3 className="font-semibold dark:text-slate-100 mb-2">Email Templates</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Email marketing templates</p>
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      Download
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-            </div>
-          </>
-        ) : (
-          /* Show verification message when not verified */
-          <div className="text-center py-12">
-            <div className="w-24 h-24 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-orange-600 dark:text-orange-400 text-4xl">🔒</span>
-            </div>
-            <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
-              Account Verification Required
-            </h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">
-              Please verify your account using the 20-digit code to access affiliate features.
-            </p>
-            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 max-w-md mx-auto">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Complete the verification process above to unlock your affiliate dashboard and start earning commissions.
-              </p>
-            </div>
           </div>
         )}
+
+        {/* Main Options */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Code Verification Option */}
+          <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                {isAlreadyVerified ? (
+                  <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Key className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                )}
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                {isAlreadyVerified ? 'Account Already Verified' : 'Verify Your Account'}
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400">
+                {isAlreadyVerified 
+                  ? 'Your account is already verified! Click below to access your affiliate dashboard.'
+                  : 'Enter your 20-digit verification code to access your affiliate dashboard'
+                }
+              </p>
+            </div>
+
+            {!showCodeForm ? (
+              <button
+                onClick={() => {
+                  if (isAlreadyVerified) {
+                    // If already verified, redirect to dashboard
+                    window.location.reload()
+                  } else {
+                    setShowCodeForm(true)
+                  }
+                }}
+                className={`w-full px-4 py-3 text-white rounded-lg transition-colors font-semibold ${
+                  isAlreadyVerified 
+                    ? 'bg-green-600 hover:bg-green-700' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {isAlreadyVerified ? 'Already Verified - View Dashboard' : 'Enter Verification Code'}
+              </button>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Verification Code
+                  </label>
+                  <input
+                    type="text"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    placeholder="Enter your 20-digit code"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                    maxLength={20}
+                  />
+                </div>
+                
+                {verificationMessage && (
+                  <div className={`p-3 rounded-lg text-sm ${
+                    verificationMessage.includes('successful') 
+                      ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                      : 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                  }`}>
+                    {verificationMessage}
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleCodeVerification}
+                    disabled={isVerifying || !verificationCode.trim()}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isVerifying ? 'Verifying...' : 'Verify Code'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowCodeForm(false)
+                      setVerificationCode('')
+                      setVerificationMessage('')
+                    }}
+                    className="px-4 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Application Form Option */}
+          <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <UserPlus className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Apply for Partnership</h3>
+              <p className="text-slate-600 dark:text-slate-400">Submit your application to become an affiliate partner</p>
+            </div>
+
+            {!showApplicationForm ? (
+              <button
+                onClick={() => setShowApplicationForm(true)}
+                disabled={hasSubmittedApplication}
+                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {hasSubmittedApplication ? 'Application Submitted' : 'Submit Application'}
+              </button>
+            ) : (
+              <form onSubmit={handleApplicationSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={applicationForm.name}
+                    onChange={(e) => setApplicationForm({...applicationForm, name: e.target.value})}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={applicationForm.email}
+                    onChange={(e) => setApplicationForm({...applicationForm, email: e.target.value})}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    value={applicationForm.phone}
+                    onChange={(e) => setApplicationForm({...applicationForm, phone: e.target.value})}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Instagram
+                    </label>
+                    <input
+                      type="text"
+                      value={applicationForm.instagram}
+                      onChange={(e) => setApplicationForm({...applicationForm, instagram: e.target.value})}
+                      placeholder="@username"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      YouTube
+                    </label>
+                    <input
+                      type="text"
+                      value={applicationForm.youtube}
+                      onChange={(e) => setApplicationForm({...applicationForm, youtube: e.target.value})}
+                      placeholder="Channel name"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Total Followers
+                  </label>
+                  <select
+                    value={applicationForm.followers}
+                    onChange={(e) => setApplicationForm({...applicationForm, followers: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                  >
+                    <option value="">Select follower count</option>
+                    <option value="1000-5000">1,000 - 5,000</option>
+                    <option value="5000-10000">5,000 - 10,000</option>
+                    <option value="10000-50000">10,000 - 50,000</option>
+                    <option value="50000-100000">50,000 - 100,000</option>
+                    <option value="100000+">100,000+</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Why do you want to join our affiliate program?
+                  </label>
+                  <textarea
+                    value={applicationForm.whyJoin}
+                    onChange={(e) => setApplicationForm({...applicationForm, whyJoin: e.target.value})}
+                    rows={3}
+                    placeholder="Tell us why you want to become an affiliate partner..."
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="agreeTerms"
+                    checked={applicationForm.agreeTerms}
+                    onChange={(e) => setApplicationForm({...applicationForm, agreeTerms: e.target.checked})}
+                    required
+                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded"
+                  />
+                  <label htmlFor="agreeTerms" className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
+                    I agree to the terms and conditions *
+                  </label>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                  >
+                    Submit Application
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowApplicationForm(false)}
+                    className="px-4 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* Benefits Section */}
+        <div className="bg-white dark:bg-slate-700 rounded-lg p-6 border border-slate-200 dark:border-slate-600">
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">Why Join Our Affiliate Program?</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">💰</span>
+              </div>
+              <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">High Commissions</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Earn up to 30% commission on every sale you refer</p>
+            </div>
+            <div className="text-center">
+              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">📈</span>
+              </div>
+              <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Real-time Tracking</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Track your referrals and earnings in real-time</p>
+            </div>
+            <div className="text-center">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">🎁</span>
+              </div>
+              <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Marketing Support</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Get access to marketing materials and support</p>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   )
 }
+
+export default AffiliatePartner

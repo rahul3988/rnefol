@@ -11,7 +11,12 @@ export default defineConfig({
         target: 'http://192.168.1.66:4000',
         changeOrigin: true,
         secure: false
-      }
+      },
+      // '/IMAGES': {
+      //   target: 'http://192.168.1.66:4000',
+      //   changeOrigin: true,
+      //   secure: false
+      // }
     },
     allowedHosts: [
       'localhost',

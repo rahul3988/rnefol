@@ -43,7 +43,7 @@ const Returns = () => {
   const loadReturns = async () => {
     try {
       setLoading(true);
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const response = await fetch(`${apiBase}/api/returns`);
       if (response.ok) {
         const data = await response.json();
@@ -281,12 +281,12 @@ const Returns = () => {
               {filteredReturns.map((returnItem) => (
                 <tr key={returnItem.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-3 px-4">
-                    <Link to={`/returns/${returnItem.id}`} className="text-brand-primary hover:underline font-medium">
+                    <Link to={`/admin/returns/${returnItem.id}`} className="text-brand-primary hover:underline font-medium">
                       {returnItem.returnNumber}
                     </Link>
                   </td>
                   <td className="py-3 px-4">
-                    <Link to={`/orders/${returnItem.orderId}`} className="text-brand-primary hover:underline">
+                    <Link to={`/admin/orders/${returnItem.orderId}`} className="text-brand-primary hover:underline">
                       {returnItem.orderId}
                     </Link>
                   </td>

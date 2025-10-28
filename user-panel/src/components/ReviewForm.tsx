@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Star, Camera, Send, CheckCircle, XCircle } from 'lucide-react'
 import apiService from '../services/api'
+import { getApiBase } from '../utils/apiBase'
 
 interface ReviewFormProps {
   orderId: string
@@ -91,7 +92,7 @@ export default function ReviewForm({
         const formData = new FormData()
         formData.append('file', image)
         
-        const response = await fetch('/api/upload', {
+        const response = await fetch(`${getApiBase()}/api/upload`, {
           method: 'POST',
           body: formData
         })

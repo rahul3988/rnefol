@@ -287,7 +287,7 @@ export default function Search({ addToWishlist }: SearchProps) {
   const handleSuggestionClick = (suggestion: SearchSuggestion) => {
     if (suggestion.type === 'product' && suggestion.product) {
       // Navigate to product page
-      window.location.hash = `#/product/${suggestion.product.slug}`
+      window.location.hash = `#/user/product/${suggestion.product.slug}`
     } else {
       // Set search query
       setSearchQuery(suggestion.title)

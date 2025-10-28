@@ -39,7 +39,7 @@ export default function ProfileAvatar({
           <img 
             src={profilePhoto} 
             alt={name || "Profile"} 
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
           />
         ) : (
           <img 

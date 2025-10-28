@@ -9,6 +9,7 @@ export type Product = {
   description: string
   details?: any
   created_at?: string
+  csvProduct?: any
 }
 
 

@@ -76,7 +76,7 @@ export default function Account() {
         {/* Account Options */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
           <a 
-            href="#/profile" 
+            href="#/user/profile" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -91,7 +91,7 @@ export default function Account() {
           </a>
 
           <a 
-            href="#/orders" 
+            href="#/user/orders" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -106,7 +106,7 @@ export default function Account() {
           </a>
 
           <a 
-            href="#/notifications" 
+            href="#/user/notifications" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -121,7 +121,7 @@ export default function Account() {
           </a>
 
           <a 
-            href="#/privacy-security" 
+            href="#/user/privacy-security" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -136,7 +136,7 @@ export default function Account() {
           </a>
 
           <a 
-            href="#/payment-methods" 
+            href="#/user/payment-methods" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -151,7 +151,7 @@ export default function Account() {
           </a>
 
           <a 
-            href="#/loyalty-rewards" 
+            href="#/user/loyalty-rewards" 
             className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 hover:shadow-2xl transition-shadow group"
           >
             <div className="w-12 h-12 bg-pink-100 dark:bg-pink-900 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -173,28 +173,28 @@ export default function Account() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <a 
-              href="#/profile" 
+              href="#/user/profile" 
               className="bg-white dark:bg-slate-700 rounded-lg p-4 hover:shadow-lg transition-shadow flex items-center"
             >
               <User className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3" />
               <span className="font-medium text-slate-900 dark:text-slate-100">Edit Profile</span>
             </a>
             <a 
-              href="#/orders" 
+              href="#/user/orders" 
               className="bg-white dark:bg-slate-700 rounded-lg p-4 hover:shadow-lg transition-shadow flex items-center"
             >
               <Settings className="w-5 h-5 text-green-600 dark:text-green-400 mr-3" />
               <span className="font-medium text-slate-900 dark:text-slate-100">View Orders</span>
             </a>
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="bg-white dark:bg-slate-700 rounded-lg p-4 hover:shadow-lg transition-shadow flex items-center"
             >
               <Gift className="w-5 h-5 text-purple-600 dark:text-purple-400 mr-3" />
               <span className="font-medium text-slate-900 dark:text-slate-100">Continue Shopping</span>
             </a>
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="bg-white dark:bg-slate-700 rounded-lg p-4 hover:shadow-lg transition-shadow flex items-center"
             >
               <Bell className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3" />

@@ -17,6 +17,7 @@ export type CartItem = {
   mrp?: string
   discounted_price?: string
   original_price?: string
+  csvProduct?: any
 }
 
 type CartContextValue = {

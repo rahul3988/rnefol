@@ -37,7 +37,7 @@ export default function BlueTeaBenefits() {
               </div>
               <div className="bg-white dark:bg-slate-700 rounded-xl p-6">
                 <img 
-                  src="/IMAGES/placeholder.jpg" 
+                  src="/IMAGES/blue-tea-benefits.jpg" 
                   alt="Blue Tea" 
                   className="w-full h-64 object-cover rounded-lg"
                 />
@@ -230,13 +230,13 @@ export default function BlueTeaBenefits() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="inline-block bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
             >
               Shop Blue Tea Products
             </a>
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="inline-block border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
             >
               Learn More

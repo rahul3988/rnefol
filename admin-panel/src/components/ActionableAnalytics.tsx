@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { BarChart3, TrendingUp, Users, Target, Filter, Download, Share, Eye, MousePointer, Clock, DollarSign, ShoppingCart, Heart, Star } from 'lucide-react'
+import apiService from '../services/api'
 
 interface AnalyticsMetric {
   id: string
@@ -31,121 +32,73 @@ interface PerformanceData {
 }
 
 export default function ActionableAnalytics() {
-  const [metrics] = useState<AnalyticsMetric[]>([
-    {
-      id: '1',
-      name: 'Revenue',
-      value: 2500000,
-      change: 12.5,
-      trend: 'up',
-      icon: DollarSign,
-      color: 'text-green-600'
-    },
-    {
-      id: '2',
-      name: 'Conversion Rate',
-      value: 3.2,
-      change: -2.1,
-      trend: 'down',
-      icon: Target,
-      color: 'text-red-600'
-    },
-    {
-      id: '3',
-      name: 'Customer Retention',
-      value: 78.5,
-      change: 5.2,
-      trend: 'up',
-      icon: Users,
-      color: 'text-blue-600'
-    },
-    {
-      id: '4',
-      name: 'Average Order Value',
-      value: 1250,
-      change: 8.7,
-      trend: 'up',
-      icon: ShoppingCart,
-      color: 'text-purple-600'
-    }
-  ])
+  const [metrics, setMetrics] = useState<AnalyticsMetric[]>([])
+  const [insights, setInsights] = useState<ActionableInsight[]>([])
+  const [performanceData, setPerformanceData] = useState<PerformanceData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const [insights] = useState<ActionableInsight[]>([
-    {
-      id: '1',
-      title: 'Optimize Checkout Process',
-      description: 'Cart abandonment rate is 68% - implement one-click checkout',
-      impact: 'high',
-      category: 'conversion',
-      action: 'Add express checkout options',
-      estimatedValue: 450000,
-      priority: 1
-    },
-    {
-      id: '2',
-      title: 'Improve Email Engagement',
-      description: 'Email open rates dropped 15% - segment audiences better',
-      impact: 'medium',
-      category: 'engagement',
-      action: 'Implement dynamic content',
-      estimatedValue: 120000,
-      priority: 2
-    },
-    {
-      id: '3',
-      title: 'Retarget Abandoned Carts',
-      description: '15% of abandoned carts convert with retargeting',
-      impact: 'high',
-      category: 'revenue',
-      action: 'Set up automated retargeting',
-      estimatedValue: 280000,
-      priority: 1
-    },
-    {
-      id: '4',
-      title: 'Enhance Product Recommendations',
-      description: 'AI recommendations show 25% higher conversion',
-      impact: 'medium',
-      category: 'conversion',
-      action: 'Implement AI-powered suggestions',
-      estimatedValue: 180000,
-      priority: 3
-    }
-  ])
+  useEffect(() => {
+    loadAnalyticsData()
+  }, [])
 
-  const [performanceData] = useState<PerformanceData[]>([
-    {
-      metric: 'Revenue Growth',
-      current: 12.5,
-      previous: 8.2,
-      benchmark: 15.0,
-      status: 'good'
-    },
-    {
-      metric: 'Customer Acquisition Cost',
-      current: 45,
-      previous: 52,
-      benchmark: 40,
-      status: 'average'
-    },
-    {
-      metric: 'Customer Lifetime Value',
-      current: 1250,
-      previous: 1100,
-      benchmark: 1500,
-      status: 'good'
-    },
-    {
-      metric: 'Return Customer Rate',
-      current: 35,
-      previous: 28,
-      benchmark: 40,
-      status: 'average'
+  const loadAnalyticsData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      // Load actionable insights from API
+      const insightsData = await apiService.getActionableInsights().catch(() => [])
+      setInsights(Array.isArray(insightsData) ? insightsData : [])
+      
+      // For now, set empty arrays for metrics and performance data
+      // These can be loaded from API in the future
+      setMetrics([])
+      setPerformanceData([])
+    } catch (err) {
+      console.error('Failed to load analytics data:', err)
+      setError('Failed to load analytics data')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }
 
   const [activeTab, setActiveTab] = useState('overview')
   const [timeRange, setTimeRange] = useState('30d')
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading analytics...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadAnalyticsData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
@@ -185,6 +138,13 @@ export default function ActionableAnalytics() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={loadAnalyticsData}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
@@ -204,7 +164,13 @@ export default function ActionableAnalytics() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {metrics.map((metric) => {
+        {metrics.length === 0 ? (
+          <div className="col-span-full text-center py-8">
+            <BarChart3 className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <p className="text-slate-600 dark:text-slate-400">No metrics available</p>
+          </div>
+        ) : (
+          metrics.map((metric) => {
           const IconComponent = metric.icon
           return (
             <div key={metric.id} className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
@@ -233,7 +199,7 @@ export default function ActionableAnalytics() {
               </div>
             </div>
           )
-        })}
+        }))}
       </div>
 
       {/* Navigation Tabs */}
@@ -320,7 +286,13 @@ export default function ActionableAnalytics() {
               </h3>
               
               <div className="space-y-4">
-                {insights.map((insight) => (
+                {insights.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Target className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                    <p className="text-slate-600 dark:text-slate-400">No insights available</p>
+                  </div>
+                ) : (
+                  insights.map((insight) => (
                   <div key={insight.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
@@ -366,7 +338,8 @@ export default function ActionableAnalytics() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -400,7 +373,15 @@ export default function ActionableAnalytics() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {performanceData.map((data, index) => (
+                    {performanceData.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center">
+                          <TrendingUp className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                          <p className="text-slate-600 dark:text-slate-400">No performance data available</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      performanceData.map((data, index) => (
                       <tr key={index}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-slate-100">
                           {data.metric}
@@ -420,7 +401,8 @@ export default function ActionableAnalytics() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

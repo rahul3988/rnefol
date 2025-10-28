@@ -85,13 +85,41 @@ class AuthService {
 
   // Notify all listeners of state changes
   private notifyListeners() {
-    this.listeners.forEach(listener => listener(this.authState))
+    this.listeners.forEach(listener => listener({ ...this.authState }))
+  }
+
+  // Helper to check if two auth states are the same
+  private areStatesEqual(state1: AuthState, state2: AuthState): boolean {
+    if (state1.isAuthenticated !== state2.isAuthenticated) return false
+    if (state1.isLoading !== state2.isLoading) return false
+    if (state1.error !== state2.error) return false
+    
+    const user1 = state1.user
+    const user2 = state2.user
+    
+    if (user1 === null && user2 === null) return true
+    if (user1 === null || user2 === null) return false
+    
+    const perms1 = user1.permissions ? [...user1.permissions].sort() : []
+    const perms2 = user2.permissions ? [...user2.permissions].sort() : []
+    
+    return (
+      user1.id === user2.id &&
+      user1.email === user2.email &&
+      user1.role === user2.role &&
+      user1.name === user2.name &&
+      JSON.stringify(perms1) === JSON.stringify(perms2)
+    )
   }
 
   // Update auth state
   private setAuthState(updates: Partial<AuthState>) {
-    this.authState = { ...this.authState, ...updates }
-    this.notifyListeners()
+    const newState = { ...this.authState, ...updates }
+    // Only update and notify if the state actually changed
+    if (!this.areStatesEqual(this.authState, newState)) {
+      this.authState = newState
+      this.notifyListeners()
+    }
   }
 
   // Get current auth state
@@ -104,28 +132,39 @@ class AuthService {
     try {
       this.setAuthState({ isLoading: true, error: null })
 
-      // In a real app, you would call your authentication API
-      // For now, we'll simulate a successful login
-      const mockUser: User = {
-        id: 1,
-        email: credentials.email,
-        name: 'Admin User',
-        role: 'admin',
-        permissions: ['read', 'write', 'delete', 'manage']
-      }
-
-      // Store token in localStorage (in real app, handle this securely)
-      localStorage.setItem('auth_token', 'mock_jwt_token')
-      localStorage.setItem('user', JSON.stringify(mockUser))
-
-      this.setAuthState({
-        user: mockUser,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
+      // Call authentication API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials)
       })
 
-      return true
+      if (response.ok) {
+        const data = await response.json()
+        const { user, token } = data
+
+        // Store token in localStorage
+        localStorage.setItem('auth_token', token)
+        localStorage.setItem('user', JSON.stringify(user))
+
+        this.setAuthState({
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null
+        })
+
+        return true
+      } else {
+        const errorData = await response.json()
+        this.setAuthState({
+          isLoading: false,
+          error: errorData.message || 'Login failed. Please check your credentials.'
+        })
+        return false
+      }
     } catch (error) {
       this.setAuthState({
         isLoading: false,
@@ -173,8 +212,15 @@ class AuthService {
 
       const user = JSON.parse(userStr)
       
-      // Validate token format (basic check)
-      if (token === 'mock_jwt_token' && user.id) {
+      // Validate token with API
+      const response = await fetch('/api/auth/verify', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
         this.setAuthState({
           user,
           isAuthenticated: true,

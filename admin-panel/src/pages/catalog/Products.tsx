@@ -55,7 +55,7 @@ function ProductsManager() {
   const [formMainImage, setFormMainImage] = useState<File | null>(null)
   const [formPdpImages, setFormPdpImages] = useState<File[]>([])
 
-  const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`
+  const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
   const toAbs = (u?: string) => {
     if (!u) return ''
     if (/^https?:\/\//i.test(u)) return u
@@ -68,11 +68,30 @@ function ProductsManager() {
     try {
       setLoading(true)
       setError('')
-      const res = await fetch(`${apiBase}/api/products`)
+      console.log('🔄 Loading products from API:', `${apiBase}/api/products`)
+      
+      // Add timestamp to prevent caching
+      const res = await fetch(`${apiBase}/api/products?_=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
+      
+      console.log('📡 API Response Status:', res.status, res.ok)
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
+      
       const data = await res.json()
-      setItems(data)
+      console.log(`✅ Loaded ${data?.length || 0} products from database`)
+      console.log('📦 First product:', data?.[0]?.title || 'None')
+      setItems(Array.isArray(data) ? data : [])
     } catch (e) {
-      setError('Failed to load products')
+      console.error('❌ Failed to load products:', e)
+      setError('Failed to load products: ' + (e as Error).message)
     } finally {
       setLoading(false)
     }
@@ -249,28 +268,73 @@ function ProductsManager() {
               let success = 0
               let failed = 0
               const errors: string[] = []
+              const createdSlugs = new Set<string>()
+              
               for (let i = 0; i < bulkRows.length; i++) {
                 const r = bulkRows[i]
                 const title = tryGet(r, ['title','producttitle','name'])
-                const slugVal = tryGet(r, ['slug']) || slugify(title)
+                const baseSlug = tryGet(r, ['slug']) || slugify(title)
+                
+                // Ensure unique slug
+                let slugVal = baseSlug
+                let counter = 1
+                while (createdSlugs.has(slugVal)) {
+                  slugVal = `${baseSlug}-${counter}`
+                  counter++
+                }
+                createdSlugs.add(slugVal)
+                
                 const category = tryGet(r, ['category','cat'])
                 const priceRaw = tryGet(r, ['price','mrp','amount'])
-                // Skip image import from CSV - will be uploaded manually later
-                // const listImg = tryGet(r, ['listimage','image','mainimage','thumbnail'])
                 const description = tryGet(r, ['description','desc'])
                 const price = priceRaw ? String(priceRaw) : ''
                 const payload = { slug: slugVal, title, category, price, listImage: '', description, details: {} }
-                if (!payload.title || !payload.slug) { failed++; errors.push(`Row ${i+1}: missing title/slug`); continue }
-                const res = await fetch(`${apiBase}/api/products`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-                })
-                if (res.ok) success++; else { failed++; errors.push(`Row ${i+1}: ${res.status}`) }
+                
+                if (!payload.title || !payload.slug) { 
+                  failed++; 
+                  errors.push(`Row ${i+1}: missing title/slug`); 
+                  continue 
+                }
+                
+                try {
+                  const res = await fetch(`${apiBase}/api/products`, {
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify(payload)
+                  })
+                  
+                  if (res.ok) {
+                    const data = await res.json()
+                    success++
+                    console.log(`Product created: ${data.id} - ${data.title}`)
+                  } else {
+                    const errorData = await res.json().catch(() => ({}))
+                    failed++
+                    const errorMsg = errorData.error || errorData.message || `HTTP ${res.status}`
+                    errors.push(`Row ${i+1}: ${errorMsg}`)
+                    console.error(`Failed to create product:`, errorData)
+                  }
+                } catch (reqError) {
+                  failed++
+                  errors.push(`Row ${i+1}: Network error - ${reqError}`)
+                  console.error(`Network error for row ${i+1}:`, reqError)
+                }
               }
+              
+              // Wait a bit to ensure database commits are complete
+              console.log(`Import finished. Waiting for database commit...`)
+              await new Promise(resolve => setTimeout(resolve, 500))
+              
+              // Reload products from database
+              console.log('Reloading products from database...')
               await load()
               setBulkRows([])
-              alert(`Import complete. Success: ${success}, Failed: ${failed}${failed? `\n${errors.slice(0,5).join('\n')}${errors.length>5? '\n...':''}`:''}`)
+              
+              const message = `Import complete!\n✅ Success: ${success}\n❌ Failed: ${failed}${failed && errors.length > 0 ? `\n\nErrors:\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...' : ''}` : ''}`
+              alert(message)
             } catch (e) {
-              alert('Import failed')
+              console.error('Import failed:', e)
+              alert(`Import failed: ${e}`)
             } finally {
               setBulkLoading(false)
             }
@@ -547,33 +611,54 @@ function ProductsManager() {
           </div>
         )}
         {editing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-2xl rounded-lg border border-gray-300 bg-white p-6 shadow-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Edit Product</h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
+            <div className="w-full max-w-4xl rounded-lg border border-gray-300 bg-white p-6 shadow-xl my-8">
+              <div className="mb-4 flex items-center justify-between sticky top-0 bg-white z-10 pb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Edit Product - {editing.title}</h3>
                 <button onClick={()=>setEditing(null)} className="rounded bg-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-300">Close</button>
               </div>
-              <form onSubmit={saveEdit} className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Slug" value={editing.slug||''} onChange={e=>setEditing(prev=>({...(prev as any), slug:e.target.value}))} required />
-                <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Title" value={editing.title||''} onChange={e=>setEditing(prev=>({...(prev as any), title:e.target.value}))} required />
-                <select 
-                  className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
-                  value={editing.category||''} 
-                  onChange={e=>setEditing(prev=>({...(prev as any), category:e.target.value}))}
-                  required
-                >
-                  <option value="">Select Category</option>
-                  <option value="Face Care">Face Care</option>
-                  <option value="Hair Care">Hair Care</option>
-                  <option value="Body Care">Body Care</option>
-                  <option value="Combo">Combo</option>
-                </select>
-                <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Price" value={editing.price||''} onChange={e=>setEditing(prev=>({...(prev as any), price:e.target.value}))} />
+              <form onSubmit={saveEdit} className="space-y-6">
                 
-                {/* Discounted Price Section */}
-                <div className="md:col-span-2 space-y-2">
-                  <div className="text-sm font-medium text-gray-700">Pricing Details</div>
-                  <div className="grid grid-cols-3 gap-2">
+                {/* Basic Information */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Basic Information</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Product Name *" value={editing.title||''} onChange={e=>setEditing(prev=>({...(prev as any), title:e.target.value}))} required />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Slug *" value={editing.slug||''} onChange={e=>setEditing(prev=>({...(prev as any), slug:e.target.value}))} required />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Brand Name" value={editing.details?.brand||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), brand:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="SKU" value={editing.details?.sku||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), sku:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="HSN Code" value={editing.details?.hsn||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), hsn:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-3" placeholder="Product Title" value={editing.details?.productTitle||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), productTitle:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-3" placeholder="Subtitle / Tagline" value={editing.details?.subtitle||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), subtitle:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Category & Type */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Category & Type</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <select 
+                      className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
+                      value={editing.category||''} 
+                      onChange={e=>setEditing(prev=>({...(prev as any), category:e.target.value}))}
+                      required
+                    >
+                      <option value="">Select Category</option>
+                      <option value="Face Care">Face Care</option>
+                      <option value="Hair Care">Hair Care</option>
+                      <option value="Body Care">Body Care</option>
+                      <option value="Combo">Combo</option>
+                    </select>
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Sub-Category" value={editing.details?.subCategory||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), subCategory:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Product Type" value={editing.details?.productType||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), productType:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Skin/Hair Type" value={editing.details?.skinHairType||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), skinHairType:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Pricing */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Pricing</h4>
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">MRP (₹)</label>
                       <input 
@@ -587,12 +672,12 @@ function ProductsManager() {
                           if (mrp && discountPercent) {
                             const discountedPrice = parseFloat(mrp) - (parseFloat(mrp) * parseFloat(discountPercent) / 100);
                             setEditing(prev=>({...(prev as any), details: { 
-                              ...(prev.details||{}), 
+                              ...(prev?.details||{}), 
                               mrp: mrp,
                               websitePrice: discountedPrice.toFixed(2)
                             }}));
                           } else {
-                            setEditing(prev=>({...(prev as any), details: { ...(prev.details||{}), mrp: mrp }}));
+                            setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), mrp: mrp }}));
                           }
                         }} 
                       />
@@ -605,20 +690,22 @@ function ProductsManager() {
                         type="number"
                         min="0"
                         max="100"
-                        value={editing.details?.discountPercent||''} 
+                        value={editing.details?.discount||editing.details?.discountPercent||''} 
                         onChange={e=>{
                           const discountPercent = e.target.value;
                           const mrp = editing.details?.mrp;
                           if (discountPercent && mrp) {
                             const discountedPrice = parseFloat(mrp) - (parseFloat(mrp) * parseFloat(discountPercent) / 100);
                             setEditing(prev=>({...(prev as any), details: { 
-                              ...(prev.details||{}), 
+                              ...(prev?.details||{}), 
+                              discount: discountPercent,
                               discountPercent: discountPercent,
                               websitePrice: discountedPrice.toFixed(2)
                             }}));
                           } else {
                             setEditing(prev=>({...(prev as any), details: { 
-                              ...(prev.details||{}), 
+                              ...(prev?.details||{}), 
+                              discount: discountPercent,
                               discountPercent: discountPercent
                             }}));
                           }
@@ -626,10 +713,10 @@ function ProductsManager() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Discounted Price (₹)</label>
+                      <label className="block text-xs text-gray-600 mb-1">Website Price (₹)</label>
                       <input 
                         className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
-                        placeholder="Discounted Price" 
+                        placeholder="Website Price" 
                         type="number"
                         value={editing.details?.websitePrice||''} 
                         onChange={e=>{
@@ -638,24 +725,24 @@ function ProductsManager() {
                           if (discountedPrice && mrp) {
                             const discountPercent = ((parseFloat(mrp) - parseFloat(discountedPrice)) / parseFloat(mrp) * 100).toFixed(1);
                             setEditing(prev=>({...(prev as any), details: { 
-                              ...(prev.details||{}), 
+                              ...(prev?.details||{}), 
                               websitePrice: discountedPrice,
+                              discount: discountPercent,
                               discountPercent: discountPercent
                             }}));
                           } else {
                             setEditing(prev=>({...(prev as any), details: { 
-                              ...(prev.details||{}), 
+                              ...(prev?.details||{}), 
                               websitePrice: discountedPrice
                             }}));
                           }
                         }} 
                       />
                     </div>
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="GST %" value={editing.details?.gst||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), gst:e.target.value}}))} />
                   </div>
-                  
-                  {/* Real-time Discount Display */}
                   {editing.details?.mrp && editing.details?.websitePrice && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-sm text-gray-600">Discount Amount</div>
@@ -670,17 +757,70 @@ function ProductsManager() {
                           </div>
                         </div>
                       </div>
-                      <div className="mt-2 text-xs text-gray-500">
-                        MRP: ₹{editing.details.mrp} → Sale Price: ₹{editing.details.websitePrice}
-                      </div>
                     </div>
                   )}
                 </div>
-                
-                <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="List Image URL" value={editing.list_image||''} onChange={e=>setEditing(prev=>({...(prev as any), list_image:e.target.value}))} />
-                <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-3" placeholder="Description" value={editing.description||''} onChange={e=>setEditing(prev=>({...(prev as any), description:e.target.value}))} />
-                <div className="md:col-span-3">
-                  <button className="rounded bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-700">Save Changes</button>
+
+                {/* Packaging & Quantity */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Packaging & Quantity</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Net Quantity" value={editing.details?.netQuantity||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), netQuantity:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Unit Count (Pack of)" value={editing.details?.unitCount||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), unitCount:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Net Weight" value={editing.details?.netWeight||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), netWeight:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Dead Weight" value={editing.details?.deadWeight||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), deadWeight:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-2" placeholder="Package Content Details" value={editing.details?.packageContent||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), packageContent:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Inner Packaging Type" value={editing.details?.innerPackaging||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), innerPackaging:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Outer Packaging Type" value={editing.details?.outerPackaging||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), outerPackaging:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Manufacturer & Origin */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Manufacturer & Origin</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Country of Origin" value={editing.details?.countryOfOrigin||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), countryOfOrigin:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Manufacturer / Packer / Importer" value={editing.details?.manufacturer||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), manufacturer:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Product Details */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Product Details</h4>
+                  <div className="space-y-3">
+                    <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Key Ingredients" rows={2} value={editing.details?.keyIngredients||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), keyIngredients:e.target.value}}))} />
+                    <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Ingredient Benefits" rows={2} value={editing.details?.ingredientBenefits||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), ingredientBenefits:e.target.value}}))} />
+                    <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="How to Use" rows={2} value={editing.details?.howToUse||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), howToUse:e.target.value}}))} />
+                    <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Product Description (Long)" rows={4} value={editing.details?.longDescription||editing.description||''} onChange={e=>{
+                      setEditing(prev=>({...(prev as any), description:e.target.value, details: { ...(prev?.details||{}), longDescription:e.target.value}}))
+                    }} />
+                    <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Bullet Highlights" rows={2} value={editing.details?.bulletHighlights||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), bulletHighlights:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Media & Links */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Media & Links</h4>
+                  <div className="grid grid-cols-1 gap-3">
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="List Image URL" value={editing.list_image||''} onChange={e=>setEditing(prev=>({...(prev as any), list_image:e.target.value}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Image Links (comma separated)" value={editing.details?.imageLinks||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), imageLinks:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Video Links (comma separated)" value={editing.details?.videoLinks||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), videoLinks:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Additional Information */}
+                <div className="border-b pb-4">
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">Additional Information</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Platform Category Mapping" value={editing.details?.platformCategoryMapping||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), platformCategoryMapping:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Hazardous / Fragile (Y/N)" value={editing.details?.hazardous||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), hazardous:e.target.value}}))} />
+                    <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-2" placeholder="Special Attributes (Badges)" value={editing.details?.badges||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), badges:e.target.value}}))} />
+                  </div>
+                </div>
+
+                {/* Submit Button */}
+                <div className="sticky bottom-0 bg-white pt-4 border-t">
+                  <button type="submit" className="w-full rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700">💾 Save All Changes</button>
                 </div>
               </form>
             </div>

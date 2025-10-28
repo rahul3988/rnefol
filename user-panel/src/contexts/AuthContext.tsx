@@ -63,14 +63,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = localStorage.getItem('user')
 
       if (token && userData) {
-        const user = JSON.parse(userData)
-        setUser(user)
-        setIsAuthenticated(true)
+        // Validate token with backend
+        const apiBase = getApiBase()
+        const response = await fetch(`${apiBase}/api/users/profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (response.ok) {
+          const user = await response.json()
+          setUser(user)
+          setIsAuthenticated(true)
+          localStorage.setItem('user', JSON.stringify(user))
+        } else {
+          // Token is invalid, clear storage
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          setUser(null)
+          setIsAuthenticated(false)
+        }
       }
     } catch (error) {
       console.error('Auth check failed:', error)
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      setUser(null)
+      setIsAuthenticated(false)
     } finally {
       setIsLoading(false)
     }

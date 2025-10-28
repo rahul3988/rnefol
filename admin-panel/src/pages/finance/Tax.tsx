@@ -39,7 +39,7 @@ const Tax: React.FC = () => {
   const loadTaxData = async () => {
     try {
       setLoading(true);
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const [ratesRes, rulesRes] = await Promise.all([
         fetch(`${apiBase}/api/tax-rates`),
         fetch(`${apiBase}/api/tax-rules`)

@@ -6,7 +6,7 @@ interface LogoProps {
   href?: string
 }
 
-export default function Logo({ className = "font-semibold text-xl hover:text-blue-600 transition-colors", href = "#/" }: LogoProps) {
+export default function Logo({ className = "font-semibold text-xl hover:text-blue-600 transition-colors", href = "/admin" }: LogoProps) {
   const { theme } = useTheme()
   
   const logoSrc = theme === 'light' 

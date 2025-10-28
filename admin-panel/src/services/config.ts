@@ -50,7 +50,7 @@ interface AppConfig {
 
 const getDynamicApiBase = () => {
   const proto = window.location.protocol
-  const host = window.location.hostname
+  const host = '192.168.1.66' // Use the correct IP address
   const port = (import.meta.env.VITE_API_PORT as string) || '4000'
   return import.meta.env.VITE_API_URL || `${proto}//${host}:${port}`
 }

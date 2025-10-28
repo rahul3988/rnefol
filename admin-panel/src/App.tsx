@@ -7,24 +7,23 @@ import { socketService } from './services/socket'
 import { 
   Dashboard, Orders, Customers, Users, Categories, Settings, Products,
   Analytics, Marketing, Discounts, FacebookInstagram, OnlineStore, GoogleYouTube, Forms,
-  Invoice, Tax, Returns, Payment
+  Invoice, InvoiceSettings, Tax, Returns, Payment, UserProfiles, UserNotifications, LoyaltyProgramManagement,
+  StaticPagesManagement, CommunityManagement, CartCheckoutManagement, AffiliateManagement, AffiliateRequests
 } from './pages'
+import UserDetail from './pages/users/UserDetail'
 import Shipments from './pages/sales/Shipments'
 import LoginPage from './pages/Login'
 import CMS from './pages/CMS'
 import CMSManagement from './pages/cms/CMSManagement'
 import BlogRequestManagement from './pages/blog/BlogRequestManagement'
-import AffiliateManagement from './pages/AffiliateManagement'
-import AffiliateRequests from './pages/AffiliateRequests'
 
 // Import all the new components
 import LoyaltyProgram from './components/LoyaltyProgram'
 import AffiliateMarketing from './components/AffiliateMarketing'
 import CashbackSystem from './components/CashbackSystem'
-import EmailMarketing from './components/EmailMarketing'
-import SMSMarketing from './components/SMSMarketing'
-import WebPushNotifications from './components/WebPushNotifications'
+import WhatsAppNotifications from './pages/notifications/WhatsAppNotifications'
 import WhatsAppChat from './components/WhatsAppChat'
+import WhatsAppManagement from './pages/whatsapp/WhatsAppManagement'
 import LiveChat from './components/LiveChat'
 import AdvancedAnalytics from './components/AdvancedAnalytics'
 import FormBuilder from './components/FormBuilder'
@@ -40,6 +39,16 @@ import OmniChannel from './components/OmniChannel'
 import APICodeManager from './components/APICodeManager'
 import PaymentOptions from './components/PaymentOptions'
 import VideoManager from './components/VideoManager'
+import ContactMessages from './pages/ContactMessages'
+import CoinWithdrawals from './pages/CoinWithdrawals'
+
+// Phase 1-4 New Pages
+import ProductVariants from './pages/ProductVariants'
+import InventoryManagement from './pages/InventoryManagement'
+import MarketplaceIntegrations from './pages/MarketplaceIntegrations'
+import Warehouses from './pages/Warehouses'
+import POSSystem from './pages/POSSystem'
+import FBShopIntegration from './pages/FBShopIntegration'
 
 export default function App() {
   useEffect(() => {
@@ -98,6 +107,20 @@ export default function App() {
       // You can add notification logic here
     })
     
+    socketService.subscribe('contact_message_created', (data: any) => {
+      console.log('💬 New contact message:', data)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('New Contact Message!', {
+          body: `Message from ${data.name}`,
+          icon: '/favicon.ico'
+        })
+      }
+    })
+    
+    socketService.subscribe('contact_message_updated', (data: any) => {
+      console.log('💬 Contact message updated:', data)
+    })
+    
     // Ask for notification permission
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
@@ -111,16 +134,18 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<ProtectedRoute />}>
+        <Route path="/admin/login" element={<LoginPage />} />
+        <Route path="/admin" element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="products" element={<Products />} />
             <Route path="orders" element={<Orders />} />
             <Route path="invoices" element={<Invoice />} />
+            <Route path="invoice-settings" element={<InvoiceSettings />} />
             <Route path="shipments" element={<Shipments />} />
             <Route path="customers" element={<Customers />} />
             <Route path="users" element={<Users />} />
+            <Route path="users/:id" element={<UserDetail />} />
             <Route path="categories" element={<Categories />} />
             <Route path="tax" element={<Tax />} />
             <Route path="returns" element={<Returns />} />
@@ -134,14 +159,27 @@ export default function App() {
             <Route path="forms" element={<Forms />} />
             <Route path="settings" element={<Settings />} />
             
+            {/* New User Management Routes */}
+            <Route path="user-profiles" element={<UserProfiles />} />
+            <Route path="user-notifications" element={<UserNotifications />} />
+            <Route path="loyalty-program-management" element={<LoyaltyProgramManagement />} />
+            
+            {/* WhatsApp Notifications */}
+            <Route path="whatsapp-notifications" element={<WhatsAppNotifications />} />
+            <Route path="whatsapp-chat" element={<WhatsAppChat />} />
+            <Route path="whatsapp-management" element={<WhatsAppManagement />} />
+            
+            {/* New Content Management Routes */}
+            <Route path="static-pages" element={<StaticPagesManagement />} />
+            <Route path="community-management" element={<CommunityManagement />} />
+            
+            {/* New E-commerce Management Routes */}
+            <Route path="cart-checkout" element={<CartCheckoutManagement />} />
+            
             {/* New Customer Engagement Features */}
             <Route path="loyalty-program" element={<LoyaltyProgram />} />
-            <Route path="affiliate-program" element={<AffiliateMarketing />} />
+            <Route path="affiliate-program" element={<AffiliateManagement />} />
             <Route path="cashback" element={<CashbackSystem />} />
-            <Route path="email-marketing" element={<EmailMarketing />} />
-            <Route path="sms-marketing" element={<SMSMarketing />} />
-            <Route path="push-notifications" element={<WebPushNotifications />} />
-            <Route path="whatsapp-chat" element={<WhatsAppChat />} />
             <Route path="live-chat" element={<LiveChat />} />
             <Route path="advanced-analytics" element={<AdvancedAnalytics />} />
             <Route path="form-builder" element={<FormBuilder />} />
@@ -159,11 +197,20 @@ export default function App() {
             <Route path="video-manager" element={<VideoManager />} />
             <Route path="cms" element={<CMSManagement />} />
             <Route path="blog-requests" element={<BlogRequestManagement />} />
-            <Route path="affiliate-program" element={<AffiliateManagement />} />
             <Route path="affiliate-requests" element={<AffiliateRequests />} />
+            <Route path="contact-messages" element={<ContactMessages />} />
+            <Route path="coin-withdrawals" element={<CoinWithdrawals />} />
+            
+            {/* Phase 1-4 New Routes */}
+            <Route path="product-variants" element={<ProductVariants />} />
+            <Route path="inventory" element={<InventoryManagement />} />
+            <Route path="marketplaces" element={<MarketplaceIntegrations />} />
+            <Route path="warehouses" element={<Warehouses />} />
+            <Route path="pos" element={<POSSystem />} />
+            <Route path="fb-shop" element={<FBShopIntegration />} />
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </AuthProvider>
   )

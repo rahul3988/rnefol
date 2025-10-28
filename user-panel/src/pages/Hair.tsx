@@ -99,10 +99,10 @@ export default function Hair() {
           ) : (
             products.map((product, index) => {
               return (
-                <div key={product.slug} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow group cursor-pointer" onClick={() => window.location.hash = `#/product/${product.slug}`}>
+                <div key={product.slug} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow group cursor-pointer flex flex-col" onClick={() => window.location.hash = `#/user/product/${product.slug}`}>
                   <div className="relative">
                     <img 
-                      src={product.list_image || '/IMAGES/placeholder.jpg'} 
+                      src={product.list_image || '/IMAGES/default-product.jpg'} 
                       alt={product.title}
                       className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
                     />
@@ -112,49 +112,51 @@ export default function Hair() {
                       </button>
                     </div>
                   </div>
-                  <div className="p-6">
-                    <h3 className="text-lg font-bold mb-2" style={{ color: '#1B4965' }}>
+                  <div className="p-6 flex flex-col h-full">
+                    <h3 className="text-lg font-bold mb-2 line-clamp-2" style={{ color: '#1B4965' }}>
                       {product.title}
                     </h3>
                     <p className="text-sm mb-4" style={{ color: '#9DB4C0' }}>
                       {product.category || 'Premium hair care product'}
                     </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <PricingDisplay 
-                          product={product} 
-                          csvProduct={product.csvProduct}
-                          className="text-2xl"
-                        />
+                    <div className="mt-auto pt-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-col">
+                          <PricingDisplay 
+                            product={product} 
+                            csvProduct={undefined}
+                            className="text-2xl"
+                          />
+                        </div>
+                        <button 
+                          className="text-white px-4 py-2 rounded-lg transition-colors flex items-center whitespace-nowrap" 
+                          style={{ backgroundColor: '#4B97C9' }} 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            addItem({
+                              slug: product.slug,
+                              title: product.title,
+                              price: product.price,
+                              listImage: product.list_image,
+                              pdpImages: [],
+                              category: product.category,
+                              description: product.description
+                            })
+                            // Show success feedback
+                            const button = e.currentTarget
+                            const originalText = button.textContent
+                            button.textContent = 'Added!'
+                            button.style.backgroundColor = '#10B981'
+                            setTimeout(() => {
+                              button.textContent = originalText
+                              button.style.backgroundColor = '#4B97C9'
+                            }, 1500)
+                          }}
+                        >
+                          <ShoppingCart className="w-4 h-4 mr-2" />
+                          Add to Cart
+                        </button>
                       </div>
-                      <button 
-                        className="text-white px-4 py-2 rounded-lg transition-colors flex items-center" 
-                        style={{ backgroundColor: '#4B97C9' }} 
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          addItem({
-                            slug: product.slug,
-                            title: product.title,
-                            price: product.price,
-                            listImage: product.list_image,
-                            pdpImages: [],
-                            category: product.category,
-                            description: product.description
-                          })
-                          // Show success feedback
-                          const button = e.currentTarget
-                          const originalText = button.textContent
-                          button.textContent = 'Added!'
-                          button.style.backgroundColor = '#10B981'
-                          setTimeout(() => {
-                            button.textContent = originalText
-                            button.style.backgroundColor = '#4B97C9'
-                          }, 1500)
-                        }}
-                      >
-                        <ShoppingCart className="w-4 h-4 mr-2" />
-                        Add to Cart
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -213,13 +215,13 @@ export default function Hair() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a 
-              href="#/shop" 
+              href="#/user/shop" 
               className="inline-block bg-white px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors" style={{ color: '#4B97C9' }}
             >
               Shop Hair Care
             </a>
             <a 
-              href="#/contact" 
+              href="#/user/contact" 
               className="inline-block border-2 border-white px-8 py-3 rounded-lg font-semibold hover:bg-white transition-colors" style={{ color: 'white' }}
             >
               Get Hair Advice

@@ -2,11 +2,6 @@
 import { Pool } from 'pg'
 
 export async function ensureSchema(pool: Pool) {
-  // First, completely drop and recreate the products table to avoid any constraint issues
-  await pool.query(`
-    DROP TABLE IF EXISTS products CASCADE;
-  `)
-  
   // Create tables first
   await pool.query(`
     create table if not exists products (
@@ -25,6 +20,60 @@ export async function ensureSchema(pool: Pool) {
       created_at timestamptz default now(),
       updated_at timestamptz default now()
     );
+    
+    -- Product Variants core
+    create table if not exists variant_options (
+      id serial primary key,
+      product_id integer not null references products(id) on delete cascade,
+      name text not null, -- e.g., Size, Color
+      values text[] not null default '{}',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    create table if not exists product_variants (
+      id serial primary key,
+      product_id integer not null references products(id) on delete cascade,
+      sku text unique,
+      attributes jsonb not null default '{}'::jsonb, -- {Size: "M", Color: "Red"}
+      price text,
+      mrp text,
+      image_url text,
+      barcode text,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    create index if not exists idx_product_variants_product on product_variants(product_id);
+    create index if not exists idx_variant_options_product on variant_options(product_id);
+    create index if not exists idx_product_variants_active on product_variants(is_active);
+    
+    -- Inventory core
+    create table if not exists inventory (
+      id serial primary key,
+      product_id integer references products(id) on delete cascade,
+      variant_id integer references product_variants(id) on delete cascade,
+      quantity integer not null default 0,
+      reserved integer not null default 0,
+      low_stock_threshold integer not null default 0,
+      updated_at timestamptz default now(),
+      unique(product_id, variant_id)
+    );
+    
+    create table if not exists inventory_logs (
+      id serial primary key,
+      product_id integer references products(id) on delete set null,
+      variant_id integer references product_variants(id) on delete set null,
+      change integer not null,
+      reason text not null,
+      metadata jsonb,
+      created_at timestamptz default now()
+    );
+    
+    create index if not exists idx_inventory_product on inventory(product_id);
+    create index if not exists idx_inventory_variant on inventory(variant_id);
+    create index if not exists idx_inventory_logs_created_at on inventory_logs(created_at);
     
     create table if not exists users (
       id serial primary key,
@@ -324,6 +373,14 @@ export async function ensureSchema(pool: Pool) {
       updated_at timestamptz default now()
     );
     
+    create table if not exists affiliate_commission_settings (
+      id serial primary key,
+      commission_percentage numeric(5,2) not null default 15.0,
+      is_active boolean not null default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
     -- Add affiliate_id to orders table
     alter table orders add column if not exists affiliate_id integer references affiliate_partners(id) on delete set null;
     
@@ -344,11 +401,814 @@ export async function ensureSchema(pool: Pool) {
     create index if not exists idx_affiliate_payouts_status on affiliate_payouts(status);
     
     create index if not exists idx_orders_affiliate_id on orders(affiliate_id);
+    
+    -- Marketing Tables
+    -- Cashback System
+    create table if not exists cashback_transactions (
+      id serial primary key,
+      user_id integer references users(id) on delete set null,
+      amount numeric(12,2) not null,
+      transaction_type text not null check (transaction_type in ('earned', 'redeemed')),
+      status text not null default 'pending' check (status in ('pending', 'completed', 'cancelled')),
+      description text,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists cashback_offers (
+      id serial primary key,
+      offer_name text not null,
+      description text,
+      min_purchase numeric(12,2),
+      cashback_percentage numeric(5,2),
+      cashback_amount numeric(12,2),
+      valid_from timestamptz,
+      valid_until timestamptz,
+      is_active boolean default true,
+      created_at timestamptz default now()
+    );
+    
+    -- Email Marketing
+    create table if not exists email_campaigns (
+      id serial primary key,
+      name text not null,
+      subject text not null,
+      content text,
+      audience text,
+      status text not null default 'draft',
+      sent_count integer default 0,
+      opened_count integer default 0,
+      clicked_count integer default 0,
+      conversion_count integer default 0,
+      scheduled_date timestamptz,
+      sent_date timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists email_templates (
+      id serial primary key,
+      name text not null,
+      subject text not null,
+      content text,
+      is_active boolean default true,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists email_automations (
+      id serial primary key,
+      name text not null,
+      trigger text not null,
+      condition text,
+      action text not null,
+      is_active boolean default false,
+      messages_sent integer default 0,
+      response_rate numeric(5,2) default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    -- SMS Marketing
+    create table if not exists sms_campaigns (
+      id serial primary key,
+      name text not null,
+      message text not null,
+      audience text,
+      status text not null default 'draft',
+      sent_count integer default 0,
+      delivered_count integer default 0,
+      clicked_count integer default 0,
+      conversion_count integer default 0,
+      scheduled_date timestamptz,
+      sent_date timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists sms_templates (
+      id serial primary key,
+      name text not null,
+      message text not null,
+      is_active boolean default true,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists sms_automations (
+      id serial primary key,
+      name text not null,
+      trigger text not null,
+      condition text,
+      action text not null,
+      is_active boolean default false,
+      messages_sent integer default 0,
+      response_rate numeric(5,2) default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    -- Push Notifications
+    create table if not exists push_notifications (
+      id serial primary key,
+      title text not null,
+      message text not null,
+      status text not null default 'draft',
+      type text not null default 'promotional',
+      audience text,
+      scheduled_date timestamptz,
+      sent_date timestamptz,
+      recipients integer default 0,
+      delivery_rate numeric(5,2) default 0,
+      open_rate numeric(5,2) default 0,
+      click_rate numeric(5,2) default 0,
+      conversion_rate numeric(5,2) default 0,
+      revenue numeric(12,2) default 0,
+      image_url text,
+      action_url text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists push_templates (
+      id serial primary key,
+      name text not null,
+      category text not null,
+      title text not null,
+      message text not null,
+      is_custom boolean default false,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists push_automations (
+      id serial primary key,
+      name text not null,
+      trigger text not null,
+      condition text,
+      action text not null,
+      is_active boolean default false,
+      notifications_sent integer default 0,
+      conversion_rate numeric(5,2) default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    -- WhatsApp Chat
+    create table if not exists whatsapp_chat_sessions (
+      id serial primary key,
+      customer_name text not null,
+      customer_phone text not null,
+      customer_email text,
+      status text not null default 'active',
+      priority text not null default 'medium',
+      assigned_agent text,
+      last_message text,
+      last_message_time timestamptz,
+      message_count integer default 0,
+      tags text[],
+      notes text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists whatsapp_templates (
+      id serial primary key,
+      name text not null,
+      category text not null,
+      content text not null,
+      variables text[],
+      is_approved boolean default false,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists whatsapp_automations (
+      id serial primary key,
+      name text not null,
+      trigger text not null,
+      condition text,
+      action text not null,
+      is_active boolean default false,
+      messages_sent integer default 0,
+      response_rate numeric(5,2) default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists whatsapp_config (
+      id serial primary key,
+      access_token text,
+      phone_number_id text,
+      business_account_id text,
+      webhook_url text,
+      verify_token text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    -- Live Chat
+    create table if not exists live_chat_sessions (
+      id serial primary key,
+      customer_name text not null,
+      customer_email text not null,
+      customer_phone text,
+      status text not null default 'active',
+      priority text not null default 'medium',
+      assigned_agent text,
+      last_message text,
+      last_message_time timestamptz,
+      message_count integer default 0,
+      tags text[],
+      notes text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists live_chat_agents (
+      id serial primary key,
+      name text not null,
+      email text not null,
+      phone text,
+      status text not null default 'online',
+      active_sessions integer default 0,
+      total_sessions integer default 0,
+      avg_response_time numeric(10,2),
+      avg_satisfaction numeric(5,2),
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists live_chat_widgets (
+      id serial primary key,
+      name text not null,
+      position text default 'bottom-right',
+      color text default 'blue',
+      is_active boolean default true,
+      created_at timestamptz default now()
+    );
+    
+    -- Additional tables referenced in CRUD handlers
+    create table if not exists whatsapp_chat (
+      id serial primary key,
+      phone_number text not null,
+      session_id text,
+      status text not null default 'active',
+      last_message text,
+      last_message_time timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists live_chat (
+      id serial primary key,
+      customer_name text not null,
+      customer_email text,
+      customer_phone text,
+      session_id text unique,
+      status text not null default 'active',
+      priority text not null default 'medium',
+      last_message text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists analytics_data (
+      id serial primary key,
+      metric_name text not null,
+      metric_value numeric(12,2),
+      metric_type text,
+      date date,
+      metadata jsonb default '{}'::jsonb,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists forms (
+      id serial primary key,
+      name text not null,
+      fields jsonb default '[]'::jsonb,
+      status text not null default 'active',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists form_submissions (
+      id serial primary key,
+      form_id integer references forms(id) on delete set null,
+      data jsonb not null default '{}'::jsonb,
+      status text not null default 'new',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists contact_messages (
+      id serial primary key,
+      name text not null,
+      email text not null,
+      phone text,
+      message text not null,
+      status text not null default 'unread',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists workflows (
+      id serial primary key,
+      name text not null,
+      description text,
+      steps jsonb default '[]'::jsonb,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists customer_segments (
+      id serial primary key,
+      name text not null,
+      description text,
+      criteria jsonb default '{}'::jsonb,
+      customer_count integer default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists customer_journeys (
+      id serial primary key,
+      customer_id integer references users(id) on delete set null,
+      journey_step text not null,
+      step_data jsonb default '{}'::jsonb,
+      timestamp timestamptz default now()
+    );
+    
+    create table if not exists actionable_insights (
+      id serial primary key,
+      insight_type text not null,
+      title text,
+      description text,
+      impact text,
+      category text,
+      action text,
+      estimated_value numeric(12,2),
+      priority integer default 0,
+      status text not null default 'new',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists ai_features (
+      id serial primary key,
+      feature_name text not null,
+      description text,
+      is_active boolean default true,
+      configuration jsonb default '{}'::jsonb,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists journey_funnels (
+      id serial primary key,
+      funnel_name text not null,
+      description text,
+      steps jsonb default '[]'::jsonb,
+      conversion_rate numeric(5,2) default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists personalization_rules (
+      id serial primary key,
+      rule_name text not null,
+      description text,
+      conditions jsonb default '{}'::jsonb,
+      actions jsonb default '{}'::jsonb,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists custom_audiences (
+      id serial primary key,
+      audience_name text not null,
+      description text,
+      criteria jsonb default '{}'::jsonb,
+      size integer default 0,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists omni_channel_campaigns (
+      id serial primary key,
+      campaign_name text not null,
+      description text,
+      channels text[],
+      status text not null default 'draft',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists api_configurations (
+      id serial primary key,
+      name text not null,
+      category text not null,
+      api_key text,
+      api_secret text,
+      base_url text,
+      configuration jsonb default '{}'::jsonb,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists invoices (
+      id serial primary key,
+      invoice_number text not null unique,
+      customer_name text not null,
+      customer_email text not null,
+      order_id integer references orders(id) on delete set null,
+      amount numeric(12,2) not null,
+      due_date date not null,
+      status text not null default 'unpaid',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists tax_rates (
+      id serial primary key,
+      name text not null,
+      rate numeric(5,2) not null,
+      type text not null,
+      region text not null,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists tax_rules (
+      id serial primary key,
+      name text not null,
+      conditions jsonb not null,
+      tax_rate_ids integer[],
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists returns (
+      id serial primary key,
+      return_number text not null unique,
+      order_id integer references orders(id) on delete set null,
+      customer_name text not null,
+      customer_email text not null,
+      reason text not null,
+      total_amount numeric(12,2) not null,
+      refund_amount numeric(12,2) not null,
+      status text not null default 'pending',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists payment_methods (
+      id serial primary key,
+      name text not null,
+      type text not null,
+      is_active boolean default true,
+      configuration jsonb default '{}'::jsonb,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists payment_gateways (
+      id serial primary key,
+      name text not null,
+      type text not null,
+      api_key text,
+      secret_key text,
+      webhook_url text,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists payment_transactions (
+      id serial primary key,
+      transaction_id text not null unique,
+      order_id integer references orders(id) on delete set null,
+      customer_name text not null,
+      amount numeric(12,2) not null,
+      method text not null,
+      gateway text not null,
+      status text not null default 'pending',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists loyalty_program (
+      id serial primary key,
+      name text not null,
+      description text,
+      points_per_purchase numeric(5,2) default 1.0,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists affiliate_program (
+      id serial primary key,
+      name text not null,
+      description text,
+      commission_rate numeric(5,2) default 10.0,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists cashback_system (
+      id serial primary key,
+      name text not null,
+      description text,
+      cashback_percentage numeric(5,2),
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists order_delivery_status (
+      id serial primary key,
+      order_id integer references orders(id) on delete cascade,
+      status text not null,
+      estimated_delivery date,
+      actual_delivery date,
+      carrier text,
+      tracking_number text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists product_reviews (
+      id serial primary key,
+      order_id integer references orders(id) on delete set null,
+      product_id integer references products(id) on delete cascade,
+      customer_email text not null,
+      customer_name text not null,
+      rating integer not null check (rating between 1 and 5),
+      comment text,
+      is_approved boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists delivery_notifications (
+      id serial primary key,
+      order_id integer references orders(id) on delete cascade,
+      customer_email text not null,
+      notification_type text not null,
+      message text,
+      sent_at timestamptz,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists shiprocket_config (
+      id serial primary key,
+      api_key text not null,
+      api_secret text not null,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists shiprocket_shipments (
+      id serial primary key,
+      order_id integer references orders(id) on delete cascade,
+      shipment_id text,
+      tracking_url text,
+      status text not null default 'pending',
+      awb_code text,
+      label_url text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists discounts (
+      id serial primary key,
+      name text not null,
+      code text not null unique,
+      type text not null check (type in ('percentage', 'fixed')),
+      value numeric(10,2) not null,
+      min_purchase numeric(12,2),
+      max_discount numeric(12,2),
+      valid_from date,
+      valid_until date,
+      usage_limit integer,
+      usage_count integer default 0,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists discount_usage (
+      id serial primary key,
+      discount_id integer references discounts(id) on delete cascade,
+      order_id integer references orders(id) on delete cascade,
+      customer_email text not null,
+      discount_amount numeric(12,2) not null,
+      created_at timestamptz default now()
+    );
+    
+    create index if not exists idx_whatsapp_chat_phone on whatsapp_chat(phone_number);
+    create index if not exists idx_live_chat_email on live_chat(customer_email);
+    create index if not exists idx_analytics_metric on analytics_data(metric_name);
+    create index if not exists idx_contact_messages_status on contact_messages(status);
+    create index if not exists idx_contact_messages_email on contact_messages(email);
+    create index if not exists idx_contact_messages_created_at on contact_messages(created_at);
+    create index if not exists idx_customer_journeys_customer on customer_journeys(customer_id);
+    create index if not exists idx_actionable_insights_type on actionable_insights(insight_type);
+    create index if not exists idx_invoices_order on invoices(order_id);
+    create index if not exists idx_payment_transactions_order on payment_transactions(order_id);
+    create index if not exists idx_order_delivery_status_order on order_delivery_status(order_id);
+    create index if not exists idx_product_reviews_product on product_reviews(product_id);
+    create index if not exists idx_delivery_notifications_order on delivery_notifications(order_id);
+    create index if not exists idx_shiprocket_shipments_order on shiprocket_shipments(order_id);
+    create index if not exists idx_discount_usage_discount on discount_usage(discount_id);
+    create index if not exists idx_discount_usage_order on discount_usage(order_id);
+    
+    -- Phase 2: Marketplaces & Staff Permissions
+    create table if not exists marketplace_accounts (
+      id serial primary key,
+      channel text not null check (channel in ('amazon','flipkart','facebook','instagram','meesho','google')),
+      name text not null,
+      credentials jsonb not null default '{}'::jsonb,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    create unique index if not exists uq_marketplace_accounts_channel_name on marketplace_accounts(channel, name);
+
+    create table if not exists channel_listings (
+      id serial primary key,
+      channel text not null,
+      account_id integer references marketplace_accounts(id) on delete cascade,
+      product_id integer references products(id) on delete cascade,
+      variant_id integer references product_variants(id) on delete set null,
+      external_listing_id text,
+      sku text,
+      price text,
+      status text default 'pending',
+      last_synced_at timestamptz,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create unique index if not exists uq_channel_listings_channel_account_product_variant 
+    on channel_listings(channel, account_id, product_id, coalesce(variant_id, -1));
+
+    create index if not exists idx_channel_listings_product on channel_listings(product_id);
+    create index if not exists idx_channel_listings_variant on channel_listings(variant_id);
+    create index if not exists idx_channel_listings_channel on channel_listings(channel);
+
+    create table if not exists channel_orders (
+      id serial primary key,
+      channel text not null,
+      account_id integer references marketplace_accounts(id) on delete set null,
+      external_order_id text not null,
+      order_id integer references orders(id) on delete set null,
+      payload jsonb,
+      status text,
+      imported_at timestamptz default now(),
+      updated_at timestamptz default now(),
+      unique(channel, external_order_id)
+    );
+
+    create index if not exists idx_channel_orders_channel on channel_orders(channel);
+    create index if not exists idx_channel_orders_order on channel_orders(order_id);
+
+    -- Staff and Permissions
+    create table if not exists staff_users (
+      id serial primary key,
+      name text not null,
+      email text unique not null,
+      password text not null,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    create table if not exists roles (
+      id serial primary key,
+      name text unique not null,
+      description text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    create table if not exists permissions (
+      id serial primary key,
+      code text unique not null,
+      description text
+    );
+
+    create table if not exists role_permissions (
+      role_id integer references roles(id) on delete cascade,
+      permission_id integer references permissions(id) on delete cascade,
+      primary key (role_id, permission_id)
+    );
+
+    create table if not exists staff_roles (
+      staff_id integer references staff_users(id) on delete cascade,
+      role_id integer references roles(id) on delete cascade,
+      primary key (staff_id, role_id)
+    );
+
+    create table if not exists staff_activity_logs (
+      id serial primary key,
+      staff_id integer references staff_users(id) on delete set null,
+      action text not null,
+      resource text,
+      metadata jsonb,
+      created_at timestamptz default now()
+    );
+
+    -- Coin Withdrawal System
+    create table if not exists coin_withdrawals (
+      id serial primary key,
+      user_id integer not null references users(id) on delete cascade,
+      amount numeric(12,2) not null,
+      withdrawal_method text not null check (withdrawal_method in ('bank', 'upi')),
+      account_holder_name text not null,
+      account_number text,
+      ifsc_code text,
+      bank_name text,
+      upi_id text,
+      status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'rejected', 'failed')),
+      transaction_id text,
+      razorpay_payout_id text,
+      admin_notes text,
+      rejection_reason text,
+      processed_by integer references users(id) on delete set null,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now(),
+      processed_at timestamptz
+    );
+    
+    create index if not exists idx_coin_withdrawals_user_id on coin_withdrawals(user_id);
+    create index if not exists idx_coin_withdrawals_status on coin_withdrawals(status);
+    create index if not exists idx_coin_withdrawals_created_at on coin_withdrawals(created_at);
+    
+    -- Coin Transaction History
+    create table if not exists coin_transactions (
+      id serial primary key,
+      user_id integer not null references users(id) on delete cascade,
+      amount integer not null,
+      type text not null check (type in ('earned', 'redeemed', 'purchase_bonus', 'withdrawal_pending', 'withdrawal_processing', 'withdrawal_completed', 'withdrawal_rejected', 'withdrawal_failed', 'referral_bonus', 'order_bonus', 'cashback')),
+      description text not null,
+      order_id integer references orders(id) on delete set null,
+      withdrawal_id integer references coin_withdrawals(id) on delete set null,
+      status text not null default 'completed' check (status in ('pending', 'processing', 'completed', 'rejected', 'failed', 'cancelled')),
+      metadata jsonb,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create index if not exists idx_coin_transactions_user_id on coin_transactions(user_id);
+    create index if not exists idx_coin_transactions_type on coin_transactions(type);
+    create index if not exists idx_coin_transactions_status on coin_transactions(status);
+    create index if not exists idx_coin_transactions_created_at on coin_transactions(created_at);
+    create index if not exists idx_coin_transactions_order_id on coin_transactions(order_id);
+    create index if not exists idx_coin_transactions_withdrawal_id on coin_transactions(withdrawal_id);
+    
+    -- Admin Notifications Table
+    create table if not exists admin_notifications (
+      id serial primary key,
+      user_id integer references users(id) on delete set null,
+      notification_type text not null,
+      title text not null,
+      message text not null,
+      link text,
+      icon text,
+      priority text default 'medium' check (priority in ('low', 'medium', 'high', 'urgent')),
+      status text default 'unread' check (status in ('unread', 'read', 'archived')),
+      metadata jsonb default '{}'::jsonb,
+      read_at timestamptz,
+      created_at timestamptz default now()
+    );
+    
+    create index if not exists idx_admin_notifications_status on admin_notifications(status);
+    create index if not exists idx_admin_notifications_type on admin_notifications(notification_type);
+    create index if not exists idx_admin_notifications_created_at on admin_notifications(created_at);
   `)
   
-  // Add unique constraint on products slug
+  // Add unique constraint on products slug (safely)
   await pool.query(`
-    ALTER TABLE products ADD CONSTRAINT products_slug_key UNIQUE (slug);
+    DO $$ 
+    BEGIN
+      -- First, update any null slugs to be unique
+      UPDATE products 
+      SET slug = 'product-' || id::text 
+      WHERE slug IS NULL OR slug = '';
+      
+      -- Then add the constraint if it doesn't exist
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'products_slug_key' 
+        AND table_name = 'products'
+      ) THEN
+        ALTER TABLE products ADD CONSTRAINT products_slug_key UNIQUE (slug);
+      END IF;
+    END $$;
   `)
   
   // Add missing price column to cart_events table
@@ -386,4 +1246,141 @@ export async function ensureSchema(pool: Pool) {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_user_actions_action ON user_actions(action);
   `)
+  
+  // Phase 3 & 4: Advanced Inventory + POS
+  await pool.query(`
+    create table if not exists warehouses (
+      id serial primary key,
+      name text not null unique,
+      address jsonb,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists warehouse_inventory (
+      id serial primary key,
+      warehouse_id integer not null references warehouses(id) on delete cascade,
+      product_id integer references products(id) on delete cascade,
+      variant_id integer references product_variants(id) on delete set null,
+      quantity integer not null default 0,
+      reserved integer not null default 0
+    );
+    
+    create unique index if not exists uq_warehouse_inventory_warehouse_product_variant 
+    on warehouse_inventory(warehouse_id, product_id, coalesce(variant_id, -1));
+    
+    create index if not exists idx_warehouse_inventory_warehouse on warehouse_inventory(warehouse_id);
+    create index if not exists idx_warehouse_inventory_product on warehouse_inventory(product_id);
+    
+    create table if not exists stock_transfers (
+      id serial primary key,
+      from_warehouse_id integer not null references warehouses(id) on delete restrict,
+      to_warehouse_id integer not null references warehouses(id) on delete restrict,
+      product_id integer references products(id) on delete restrict,
+      variant_id integer references product_variants(id) on delete set null,
+      quantity integer not null,
+      status text default 'pending' check (status in ('pending', 'in_transit', 'completed', 'cancelled')),
+      transferred_by integer,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists suppliers (
+      id serial primary key,
+      name text not null,
+      email text,
+      phone text,
+      address jsonb,
+      contact_person text,
+      payment_terms text,
+      notes jsonb,
+      is_active boolean default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists purchase_orders (
+      id serial primary key,
+      po_number text unique not null,
+      supplier_id integer not null references suppliers(id) on delete restrict,
+      status text default 'pending' check (status in ('pending', 'sent', 'confirmed', 'in_transit', 'received', 'cancelled')),
+      items jsonb not null,
+      total_amount numeric(12,2),
+      due_date date,
+      created_by integer,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create index if not exists idx_purchase_orders_supplier on purchase_orders(supplier_id);
+    create index if not exists idx_purchase_orders_status on purchase_orders(status);
+    
+    create table if not exists purchase_order_items (
+      id serial primary key,
+      po_id integer not null references purchase_orders(id) on delete cascade,
+      product_id integer references products(id) on delete restrict,
+      variant_id integer references product_variants(id) on delete set null,
+      quantity integer not null,
+      unit_price numeric(10,2),
+      total_price numeric(12,2),
+      received_quantity integer default 0,
+      created_at timestamptz default now()
+    );
+    
+    create table if not exists barcodes (
+      id serial primary key,
+      barcode text unique not null,
+      product_id integer references products(id) on delete set null,
+      variant_id integer references product_variants(id) on delete set null,
+      barcode_type text default 'EAN13',
+      is_active boolean default true,
+      created_at timestamptz default now()
+    );
+    
+    create index if not exists idx_barcodes_barcode on barcodes(barcode);
+    create index if not exists idx_barcodes_product on barcodes(product_id);
+    
+    -- Phase 4: POS
+    create table if not exists pos_transactions (
+      id serial primary key,
+      transaction_number text unique not null,
+      staff_id integer references staff_users(id) on delete set null,
+      items jsonb not null,
+      subtotal numeric(12,2) not null,
+      tax numeric(12,2) default 0,
+      discount numeric(12,2) default 0,
+      total numeric(12,2) not null,
+      payment_method text not null,
+      status text default 'completed' check (status in ('pending', 'completed', 'cancelled', 'refunded')),
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+    
+    create table if not exists pos_sessions (
+      id serial primary key,
+      staff_id integer not null references staff_users(id) on delete restrict,
+      opened_at timestamptz default now(),
+      closed_at timestamptz,
+      opening_amount numeric(12,2) not null default 0,
+      closing_amount numeric(12,2),
+      status text default 'open' check (status in ('open', 'closed'))
+    );
+    
+    create index if not exists idx_pos_transactions_staff on pos_transactions(staff_id);
+    create index if not exists idx_pos_transactions_created_at on pos_transactions(created_at);
+    create index if not exists idx_pos_sessions_staff on pos_sessions(staff_id);
+    
+    -- Facebook/Instagram Shop
+    create table if not exists fb_shop_config (
+      id serial primary key,
+      page_id text,
+      access_token text,
+      is_active boolean default false,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+  `)
+  
+  console.log('✅ Phase 3 & 4 tables created successfully')
 }

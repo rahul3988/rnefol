@@ -1,6 +1,53 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export default function Contact() {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    message: ''
+  })
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.id]: e.target.value
+    })
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      const response = await fetch('http://192.168.1.66:4000/api/contact/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send message')
+      }
+
+      setSuccess(true)
+      setFormData({ name: '', email: '', phone: '', message: '' })
+    } catch (err: any) {
+      setError(err.message || 'Failed to send message. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <main className="min-h-screen py-10" style={{backgroundColor: '#F4F9F9'}}>
       <div className="mx-auto max-w-7xl px-4">
@@ -20,13 +67,27 @@ export default function Contact() {
               Or simply pop in for a cup of fresh tea and a cookie:
             </p>
             
-            <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+            {success && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-800">Message sent successfully! We'll get back to you soon.</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-800">{error}</p>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label className="mb-2 block text-sm font-medium" style={{color: '#1B4965'}} htmlFor="name">Name</label>
                 <input 
                   id="name" 
                   className="h-12 w-full rounded-lg border border-gray-300 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
-                  required 
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
                 />
               </div>
               <div>
@@ -34,7 +95,9 @@ export default function Contact() {
                 <input 
                   id="phone" 
                   type="tel" 
-                  className="h-12 w-full rounded-lg border border-gray-300 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
+                  className="h-12 w-full rounded-lg border border-gray-300 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  value={formData.phone}
+                  onChange={handleChange}
                 />
               </div>
               <div>
@@ -43,7 +106,9 @@ export default function Contact() {
                   id="email" 
                   type="email" 
                   className="h-12 w-full rounded-lg border border-gray-300 px-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
-                  required 
+                  required
+                  value={formData.email}
+                  onChange={handleChange}
                 />
               </div>
               <div>
@@ -52,15 +117,18 @@ export default function Contact() {
                   id="message" 
                   rows={6} 
                   className="w-full rounded-lg border border-gray-300 p-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
-                  required 
+                  required
+                  value={formData.message}
+                  onChange={handleChange}
                 />
               </div>
               <button 
                 type="submit"
-                className="w-full px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg"
+                disabled={loading}
+                className="w-full px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{backgroundColor: '#1B4965'}}
               >
-                SEND MESSAGE
+                {loading ? 'SENDING...' : 'SEND MESSAGE'}
               </button>
             </form>
           </div>
@@ -122,52 +190,6 @@ export default function Contact() {
           </div>
         </div>
 
-        {/* Additional Sections */}
-        <div className="mt-16">
-          {/* Affiliate Program */}
-          <div className="rounded-xl border border-gray-200 p-8" style={{backgroundColor: '#D0E8F2'}}>
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full" style={{backgroundColor: '#4B97C9'}}>
-              <span className="text-xl text-white">🤝</span>
-            </div>
-            <h3 className="mb-4 text-2xl font-serif" style={{color: '#1B4965'}}>Affiliate Program</h3>
-            <p className="mb-6 font-light" style={{color: '#9DB4C0'}}>
-              Join our affiliate program and earn commissions by promoting Nefol products. 
-              Share our natural skincare solutions with your audience and get rewarded for every sale.
-            </p>
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center space-x-2">
-                <span style={{color: '#4B97C9'}}>✓</span>
-                <span className="text-sm font-light" style={{color: '#1B4965'}}>Competitive commission rates</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span style={{color: '#4B97C9'}}>✓</span>
-                <span className="text-sm font-light" style={{color: '#1B4965'}}>Marketing materials provided</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span style={{color: '#4B97C9'}}>✓</span>
-                <span className="text-sm font-light" style={{color: '#1B4965'}}>Real-time tracking dashboard</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span style={{color: '#4B97C9'}}>✓</span>
-                <span className="text-sm font-light" style={{color: '#1B4965'}}>Dedicated support team</span>
-              </div>
-            </div>
-            
-            {/* Join Now Button */}
-            <div className="mt-8 text-center">
-              <button 
-                onClick={() => window.location.hash = '#/affiliate'}
-                className="px-8 py-3 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg rounded-lg hover:opacity-90"
-                style={{backgroundColor: '#1B4965'}}
-              >
-                JOIN NOW
-              </button>
-              <p className="mt-4 text-sm font-light" style={{color: '#9DB4C0'}}>
-                After approval, you'll receive a 20-digit verification code to activate your affiliate account.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </main>
   )

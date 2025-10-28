@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { api } from '../services/api'
 import { CreditCard, Smartphone, Wallet, Building } from 'lucide-react'
 import PricingDisplay from '../components/PricingDisplay'
+import AuthGuard from '../components/AuthGuard'
 
 const paymentMethods = [
   { id: 'cod', name: 'Cash on Delivery', icon: CreditCard, color: 'bg-green-500' },
@@ -16,8 +17,19 @@ const paymentMethods = [
   { id: 'bhim', name: 'BHIM', icon: Building, color: 'bg-orange-500' }
 ]
 
-export default function Checkout() {
-  const { items, subtotal, tax, total, clear } = useCart()
+interface CheckoutProps {
+  affiliateId?: string | null
+}
+
+export default function Checkout({ affiliateId }: CheckoutProps) {
+  const cartContext = useCart()
+  
+  // Safely access cart properties with fallbacks
+  const items = cartContext?.items || []
+  const subtotal = cartContext?.subtotal || 0
+  const tax = cartContext?.tax || 0
+  const total = cartContext?.total || 0
+  const clear = cartContext?.clear
   const { user, isAuthenticated } = useAuth()
   const [buySlug, setBuySlug] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -28,6 +40,7 @@ export default function Checkout() {
   const [loyaltyPoints, setLoyaltyPoints] = useState(0)
   const [discountCode, setDiscountCode] = useState('')
   const [appliedDiscount, setAppliedDiscount] = useState<any>(null)
+  const [csvProducts, setCsvProducts] = useState<any>({}) // Store CSV product data by slug
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -58,17 +71,60 @@ export default function Checkout() {
     
     // Fetch available payment methods
     fetchPaymentMethods()
+    
+    // Fetch CSV product data
+    fetchCsvProducts()
   }, [isAuthenticated, user])
+  
+  const fetchCsvProducts = async () => {
+    try {
+      const apiBase = `${window.location.protocol}//${window.location.hostname}:4000`
+      const response = await fetch(`${apiBase}/api/products-csv`)
+      if (response.ok) {
+        const data = await response.json()
+        // Create a map of slug to CSV data
+        const csvMap: any = {}
+        data.forEach((csvProduct: any) => {
+          // Handle potential variations in column names (trim spaces)
+          const normalizedProduct: any = {}
+          Object.keys(csvProduct).forEach(key => {
+            const normalizedKey = key.trim()
+            normalizedProduct[normalizedKey] = csvProduct[key]
+          })
+          
+          const csvSlug = normalizedProduct['Slug'] || normalizedProduct['Product Name']?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || ''
+          
+          if (csvSlug) {
+            csvMap[csvSlug] = normalizedProduct
+            // Debug: log HSN codes
+            if (csvSlug === 'nefol-hair-mask') {
+              console.log('🔍 Hair Mask CSV Data:', normalizedProduct)
+              console.log('🔍 HSN Code:', normalizedProduct['HSN Code'])
+            }
+          }
+        })
+        console.log('📊 CSV Products Map:', csvMap)
+        setCsvProducts(csvMap)
+      }
+    } catch (error) {
+      console.error('Failed to fetch CSV products:', error)
+    }
+  }
 
   const orderItems = useMemo(() => {
-    if (buySlug) {
-      const fromCart = items.find(i => i.slug === buySlug)
-      if (fromCart) return [fromCart]
-      // fallback minimal single-qty item until PDP adds to cart
-      return []
-    }
-    return items
-  }, [buySlug, items])
+    const baseItems: any[] = buySlug 
+      ? items.filter(i => i.slug === buySlug)
+      : items
+    
+    // Enrich with CSV data if available
+    return baseItems.map((item: any) => {
+      const csvProduct = csvProducts[item.slug]
+      return {
+        ...item,
+        csvProduct: csvProduct || null
+      }
+    })
+  }, [buySlug, items, csvProducts])
 
   const fetchPaymentMethods = async () => {
     try {
@@ -149,12 +205,50 @@ export default function Checkout() {
     }
   }, [canUsePostpaid])
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
+  // Helper function to enrich order items with CSV data
+  const enrichOrderItems = () => {
+    return orderItems.map((item: any) => {
+      const csvProduct = csvProducts[item.slug] || {}
+      return {
+        ...item,
+        csvProduct: {
+          'Brand Name': csvProduct['Brand Name'],
+          'SKU': csvProduct['SKU'],
+          'HSN Code': csvProduct['HSN Code'],
+          'Net Quantity (Content)': csvProduct['Net Quantity (Content)'],
+          'Unit Count (Pack of)': csvProduct['Unit Count (Pack of)'],
+          'Net Weight (Product Only)': csvProduct['Net Weight (Product Only)'],
+          'Dead Weight (Packaging Only)': csvProduct['Dead Weight (Packaging Only)'],
+          'GST %': csvProduct['GST %'],
+          'Country of Origin': csvProduct['Country of Origin'],
+          'Manufacturer / Packer / Importer': csvProduct['Manufacturer / Packer / Importer'],
+          'Key Ingredients': csvProduct['Key Ingredients'],
+          'Ingredient Benefits': csvProduct['Ingredient Benefits'],
+          'How to Use (Steps)': csvProduct['How to Use (Steps)'],
+          'Package Content Details': csvProduct['Package Content Details'],
+          'Inner Packaging Type': csvProduct['Inner Packaging Type'],
+          'Outer Packaging Type': csvProduct['Outer Packaging Type'],
+          'Hazardous / Fragile (Y/N)': csvProduct['Hazardous / Fragile (Y/N)'],
+          'Special Attributes (Badges)': csvProduct['Special Attributes (Badges)'],
+          'Product Category': csvProduct['Product Category'],
+          'Product Sub-Category': csvProduct['Product Sub-Category'],
+          'Product Type': csvProduct['Product Type'],
+          'Skin/Hair Type': csvProduct['Skin/Hair Type'],
+          'MRP': csvProduct['MRP'],
+          'website price': csvProduct['website price'],
+          'discount': csvProduct['discount'],
+          'Image Links': csvProduct['Image Links'],
+          'Video Links': csvProduct['Video Links']
+        }
+      }
+    })
+  }
+
+  // Handle Razorpay payment
+  const handleRazorpayPayment = async () => {
     try {
       const orderNumber = `NEFOL-${Date.now()}`
+      const enrichedItems = enrichOrderItems()
       
       const orderData = {
         order_number: orderNumber,
@@ -167,19 +261,121 @@ export default function Checkout() {
           zip, 
           phone 
         },
-        items: orderItems,
+        items: enrichedItems,
+        subtotal: Number(calcSubtotal.toFixed(2)),
+        shipping,
+        tax: calculatedTax,
+        total: Number(finalTotal.toFixed(2)),
+        payment_method: 'razorpay',
+        payment_type: paymentType,
+        status: 'created',
+        affiliate_id: affiliateId
+      }
+
+      // Create order in backend first
+      await api.orders.createOrder(orderData)
+
+      // Create Razorpay order
+      const razorpayOrder = await api.payment.createRazorpayOrder({
+        amount: Number(finalTotal.toFixed(2)),
+        currency: 'INR',
+        order_number: orderNumber,
+        customer_name: name,
+        customer_email: email,
+        customer_phone: phone
+      })
+
+      // Initialize Razorpay checkout
+      const options = {
+        key: razorpayOrder.key_id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        name: 'Nefol',
+        description: `Order ${orderNumber}`,
+        order_id: razorpayOrder.id,
+        prefill: {
+          name: name,
+          email: email,
+          contact: phone
+        },
+        handler: async function(response: any) {
+          try {
+            // Verify payment
+            await api.payment.verifyRazorpayPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              order_number: orderNumber
+            })
+
+            if (clear) clear()
+            window.location.hash = `#/user/confirmation?order=${encodeURIComponent(orderNumber)}`
+          } catch (err: any) {
+            setError('Payment verification failed: ' + err.message)
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            setLoading(false)
+          }
+        }
+      }
+
+      const rzp = (window as any).Razorpay(options)
+      rzp.open()
+
+    } catch (err: any) {
+      setError(err?.message || 'Payment initiation failed')
+      setLoading(false)
+    }
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+
+    try {
+      // Handle Razorpay payment
+      if (selectedPayment === 'razorpay') {
+        await handleRazorpayPayment()
+        return
+      }
+
+      // Handle other payment methods (COD, etc.)
+      const orderNumber = `NEFOL-${Date.now()}`
+      
+      if (affiliateId) {
+        console.log('🎯 Processing order with affiliate ID:', affiliateId)
+      }
+      
+      const enrichedItems = enrichOrderItems()
+      
+      const orderData = {
+        order_number: orderNumber,
+        customer_name: name,
+        customer_email: email,
+        shipping_address: { 
+          address, 
+          city, 
+          state: state, 
+          zip, 
+          phone 
+        },
+        items: enrichedItems,
         subtotal: Number(calcSubtotal.toFixed(2)),
         shipping,
         tax: calculatedTax,
         total: Number(finalTotal.toFixed(2)),
         payment_method: selectedPayment,
         payment_type: isCOD ? 'cod' : paymentType,
-        status: 'created'
+        status: 'created',
+        affiliate_id: affiliateId
       }
       
       const data = await api.orders.createOrder(orderData)
-      clear()
-      window.location.hash = `#/confirmation?order=${encodeURIComponent(data.order_number || orderNumber)}`
+      if (clear) clear()
+      window.location.hash = `#/user/confirmation?order=${encodeURIComponent(data.order_number || orderNumber)}`
     } catch (err: any) {
       setError(err?.message || 'Order failed')
     } finally {
@@ -189,16 +385,19 @@ export default function Checkout() {
 
   if (!orderItems.length) {
     return (
-      <main className="py-10 dark:bg-slate-900">
-        <div className="mx-auto max-w-3xl px-4">
-          <h1 className="text-2xl font-bold dark:text-slate-100">Checkout</h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-400">Your cart is empty.</p>
-        </div>
-      </main>
+      <AuthGuard>
+        <main className="py-10 dark:bg-slate-900">
+          <div className="mx-auto max-w-3xl px-4">
+            <h1 className="text-2xl font-bold dark:text-slate-100">Checkout</h1>
+            <p className="mt-2 text-slate-600 dark:text-slate-400">Your cart is empty.</p>
+          </div>
+        </main>
+      </AuthGuard>
     )
   }
 
   return (
+    <AuthGuard>
     <main className="py-10 dark:bg-slate-900">
       <div className="mx-auto max-w-5xl px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
         <form onSubmit={submit} className="md:col-span-2 space-y-6">
@@ -307,7 +506,7 @@ export default function Checkout() {
         <aside>
           <h2 className="text-xl font-semibold mb-3 dark:text-slate-100">Order Summary</h2>
           <div className="space-y-3">
-            {orderItems.map((i) => (
+            {orderItems.map((i: any) => (
               <div key={i.slug} className="flex justify-between text-sm">
                 <div>
                   <span className="dark:text-slate-300">{i.title} × {i.quantity}</span>
@@ -332,6 +531,7 @@ export default function Checkout() {
         </aside>
       </div>
     </main>
+    </AuthGuard>
   )
 }
 

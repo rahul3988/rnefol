@@ -56,7 +56,7 @@ const Payment = () => {
   const loadPaymentData = async () => {
     try {
       setLoading(true);
-      const apiBase = (import.meta as any).env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
       const [methodsRes, transactionsRes, reportRes] = await Promise.all([
         fetch(`${apiBase}/api/payment-methods`),
         fetch(`${apiBase}/api/payment-transactions`),
@@ -85,9 +85,9 @@ const Payment = () => {
   };
 
   const filteredTransactions = transactions.filter(transaction => {
-    const matchesSearch = transaction.transactionId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transaction.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transaction.orderId.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = (transaction.transactionId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (transaction.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (transaction.orderId || '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || transaction.status === statusFilter
     return matchesSearch && matchesStatus
   })
@@ -322,7 +322,7 @@ const Payment = () => {
                 <p>Fee: {method.processingFee}%</p>
                 <p>Min: ${method.minimumAmount}</p>
                 <p>Max: ${method.maximumAmount}</p>
-                <p>Currencies: {method.supportedCurrencies.join(', ')}</p>
+                <p>Currencies: {(method.supportedCurrencies || []).join(', ')}</p>
               </div>
               <div className="flex items-center space-x-2 mt-4">
                 <button

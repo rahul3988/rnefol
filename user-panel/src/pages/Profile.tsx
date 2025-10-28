@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { User, CreditCard, MapPin, Phone, Mail, Package, Heart, Settings, LogOut } from 'lucide-react'
+import { User, CreditCard, MapPin, Phone, Mail, Package, Heart, Settings, LogOut, LogIn } from 'lucide-react'
 import { formatCoins, formatCoinsWithValue, calculatePurchaseCoins } from '../utils/points'
 import ProfileAvatar from '../components/ProfileAvatar'
 import { useAuth } from '../contexts/AuthContext'
@@ -43,7 +43,7 @@ interface SavedCard {
 }
 
 export default function Profile() {
-  const { refreshUser } = useAuth()
+  const { refreshUser, isAuthenticated } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [savedCards, setSavedCards] = useState<SavedCard[]>([])
@@ -82,10 +82,14 @@ export default function Profile() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    fetchProfile()
-    fetchOrders()
-    fetchSavedCards()
-  }, [])
+    if (isAuthenticated) {
+      fetchProfile()
+      fetchOrders()
+      fetchSavedCards()
+    } else {
+      setLoading(false)
+    }
+  }, [isAuthenticated])
 
   const fetchProfile = async () => {
     try {
@@ -101,13 +105,13 @@ export default function Profile() {
       if (error.message.includes('401') || error.message.includes('Unauthorized')) {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
-        window.location.hash = '#/login'
+        window.location.hash = '#/user/login'
         return
       }
       // Show fallback profile
       setProfile({
         name: 'User',
-        email: 'user@example.com',
+        email: '',
         phone: '',
         address: { street: '', city: '', state: '', zip: '' },
         loyalty_points: 0,
@@ -164,7 +168,7 @@ export default function Profile() {
       if (error.message.includes('401') || error.message.includes('Unauthorized')) {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
-        window.location.hash = '#/login'
+        window.location.hash = '#/user/login'
       } else {
         alert('Failed to update profile')
       }
@@ -174,7 +178,7 @@ export default function Profile() {
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
-    window.location.hash = '#/login'
+    window.location.hash = '#/user/login'
   }
 
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,7 +215,7 @@ export default function Profile() {
         // Update profile with new photo URL
         const token = localStorage.getItem('token')
         if (!token) {
-          window.location.hash = '#/login'
+          window.location.hash = '#/user/login'
           return
         }
 
@@ -254,7 +258,7 @@ export default function Profile() {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        window.location.hash = '#/login'
+        window.location.hash = '#/user/login'
         return
       }
 
@@ -287,7 +291,7 @@ export default function Profile() {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        window.location.hash = '#/login'
+        window.location.hash = '#/user/login'
         return
       }
 
@@ -345,12 +349,24 @@ export default function Profile() {
     )
   }
 
+  if (!isAuthenticated) {
+    return (
+      <main className="py-10 dark:bg-slate-900 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Please Login</h1>
+          <p className="text-slate-600 dark:text-slate-400 mb-6">You need to be logged in to view your profile.</p>
+          <a href="#/user/login" className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Go to Login</a>
+        </div>
+      </main>
+    )
+  }
+
   if (!profile) {
     return (
       <main className="py-10 dark:bg-slate-900 min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Profile Not Found</h1>
-          <a href="#/login" className="text-blue-600 hover:text-blue-700">Go to Login</a>
+          <a href="#/user/login" className="text-blue-600 hover:text-blue-700">Go to Login</a>
         </div>
       </main>
     )
@@ -358,6 +374,7 @@ export default function Profile() {
 
   const tabs = [
     { id: 'overview', label: 'Your Profile', icon: User },
+    { id: 'wishlist', label: 'Wishlist', icon: Heart },
     { id: 'cash', label: 'Nefol Coins', icon: CreditCard },
     { id: 'affiliate', label: 'Affiliate Partner', icon: Heart },
     { id: 'orders', label: 'Your Orders', icon: Package },
@@ -386,29 +403,32 @@ export default function Profile() {
                     name={profile.name}
                     size="xl"
                     className="mx-auto"
-                    clickable={true}
-                    onClick={() => fileInputRef.current?.click()}
+                    clickable={isAuthenticated}
+                    onClick={() => isAuthenticated && fileInputRef.current?.click()}
                   />
-                  {/* Photo Upload Button */}
-                  <div className="mt-3">
-                    <label className="cursor-pointer">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
-                        disabled={uploadingPhoto}
-                      />
-                      <button
-                        type="button"
-                        disabled={uploadingPhoto}
-                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {uploadingPhoto ? 'Uploading...' : 'Change Photo'}
-                      </button>
-                    </label>
-                  </div>
+                  {/* Photo Upload Button - Only show when authenticated */}
+                  {isAuthenticated && (
+                    <div className="mt-3">
+                      <label className="cursor-pointer inline-block">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                          disabled={uploadingPhoto}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploadingPhoto}
+                          className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {uploadingPhoto ? 'Uploading...' : 'Change Photo'}
+                        </button>
+                      </label>
+                    </div>
+                  )}
                 </div>
                 <h3 className="text-lg font-semibold dark:text-slate-100">{profile.name}</h3>
                 <p className="text-slate-600 dark:text-slate-400">{profile.email}</p>
@@ -422,9 +442,20 @@ export default function Profile() {
                     <button
                       key={tab.id}
                       onClick={() => {
-                        if (tab.id === 'affiliate') {
-                          // Redirect to affiliate partner page
-                          window.location.hash = '#/affiliate-partner'
+                        if (tab.id === 'cash') {
+                          window.location.hash = '#/user/nefol-coins'
+                        } else if (tab.id === 'affiliate') {
+                          window.location.hash = '#/user/affiliate-partner'
+                        } else if (tab.id === 'orders') {
+                          window.location.hash = '#/user/user-orders'
+                        } else if (tab.id === 'cards') {
+                          window.location.hash = '#/user/saved-cards'
+                        } else if (tab.id === 'address') {
+                          window.location.hash = '#/user/manage-address'
+                        } else if (tab.id === 'contact') {
+                          window.location.hash = '#/user/contact'
+                        } else if (tab.id === 'wishlist') {
+                          window.location.hash = '#/user/wishlist'
                         } else {
                           setActiveTab(tab.id)
                           // Smooth scroll to content area
@@ -451,13 +482,23 @@ export default function Profile() {
                   )
                 })}
                 
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                >
-                  <LogOut className="h-5 w-5" />
-                  <span className="font-medium">Logout</span>
-                </button>
+                {isAuthenticated ? (
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <LogOut className="h-5 w-5" />
+                    <span className="font-medium">Logout</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => window.location.hash = '#/user/login'}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    <LogIn className="h-5 w-5" />
+                    <span className="font-medium">Login</span>
+                  </button>
+                )}
               </nav>
             </div>
           </div>
@@ -470,12 +511,14 @@ export default function Profile() {
                 <div>
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-semibold dark:text-slate-100">Your Profile</h2>
-                    <button
-                      onClick={() => setEditing(!editing)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      {editing ? 'Cancel' : 'Edit Profile'}
-                    </button>
+                    {isAuthenticated && (
+                      <button
+                        onClick={() => setEditing(!editing)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        {editing ? 'Cancel' : 'Edit Profile'}
+                      </button>
+                    )}
                   </div>
 
                   {editing ? (
@@ -648,7 +691,7 @@ export default function Profile() {
                       <Package className="h-16 w-16 text-slate-400 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">No Orders Yet</h3>
                       <p className="text-slate-600 dark:text-slate-400 mb-6">Start shopping to see your orders here</p>
-                      <a href="#/shop" className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                      <a href="#/user/shop" className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                         Start Shopping
                       </a>
                     </div>
@@ -693,12 +736,14 @@ export default function Profile() {
                 <div>
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-semibold dark:text-slate-100">Saved Cards</h2>
-                    <button 
-                      onClick={() => setShowAddCard(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Add New Card
-                    </button>
+                    {isAuthenticated && (
+                      <button 
+                        onClick={() => setShowAddCard(true)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Add New Card
+                      </button>
+                    )}
                   </div>
                   
                   {!Array.isArray(savedCards) || savedCards.length === 0 ? (
@@ -706,12 +751,14 @@ export default function Profile() {
                       <CreditCard className="h-16 w-16 text-slate-400 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold dark:text-slate-100 mb-2">No Saved Cards</h3>
                       <p className="text-slate-600 dark:text-slate-400 mb-6">Add a card for faster checkout</p>
-                      <button 
-                        onClick={() => setShowAddCard(true)}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        Add Card
-                      </button>
+                      {isAuthenticated && (
+                        <button 
+                          onClick={() => setShowAddCard(true)}
+                          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Add Card
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -731,7 +778,9 @@ export default function Profile() {
                               {card.is_default && (
                                 <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Default</span>
                               )}
-                              <button className="px-3 py-1 text-sm text-red-600 hover:text-red-700">Remove</button>
+                              {isAuthenticated && (
+                                <button className="px-3 py-1 text-sm text-red-600 hover:text-red-700">Remove</button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -746,12 +795,14 @@ export default function Profile() {
                 <div>
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-semibold dark:text-slate-100">Manage Address</h2>
-                    <button 
-                      onClick={() => setShowAddAddress(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Add New Address
-                    </button>
+                    {isAuthenticated && (
+                      <button 
+                        onClick={() => setShowAddAddress(true)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Add New Address
+                      </button>
+                    )}
                   </div>
                   
                   <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-6">
@@ -770,10 +821,12 @@ export default function Profile() {
                         </p>
                         <p className="text-sm text-slate-500 dark:text-slate-500 mt-2">{profile.phone}</p>
                       </div>
-                      <div className="flex gap-2">
-                        <button className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700">Edit</button>
-                        <button className="px-3 py-1 text-sm text-red-600 hover:text-red-700">Delete</button>
-                      </div>
+                      {isAuthenticated && (
+                        <div className="flex gap-2">
+                          <button className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700">Edit</button>
+                          <button className="px-3 py-1 text-sm text-red-600 hover:text-red-700">Delete</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

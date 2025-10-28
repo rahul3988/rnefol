@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react'
 import authService from '../services/auth'
 
 export type Role = 'admin' | 'manager' | 'viewer'
@@ -38,23 +38,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe
   }, [])
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     return await authService.login({ email, password })
-  }
+  }, [])
 
-  const logout = async (): Promise<void> => {
+  const logout = useCallback(async (): Promise<void> => {
     await authService.logout()
-  }
+  }, [])
 
-  const hasPermission = (permission: string): boolean => {
+  const hasPermission = useCallback((permission: string): boolean => {
     return authService.hasPermission(permission)
-  }
+  }, [])
 
-  const hasRole = (role: string): boolean => {
+  const hasRole = useCallback((role: string): boolean => {
     return authService.hasRole(role)
-  }
+  }, [])
 
-  const contextValue: AuthContextValue = {
+  // Memoize the user string to avoid unnecessary re-renders when user object reference changes
+  const userId = authState.user?.id
+  const userEmail = authState.user?.email
+  const userRole = authState.user?.role
+  const userName = authState.user?.name
+  const userPermissions = authState.user?.permissions
+  
+  const userKey = useMemo(() => {
+    if (!authState.user) return null
+    // Sort permissions to ensure consistent comparison regardless of array order
+    const sortedPermissions = userPermissions?.slice().sort().join(',') || ''
+    return `${userId}-${userEmail}-${userRole}-${userName}-${sortedPermissions}`
+  }, [userId, userEmail, userRole, userName, userPermissions])
+
+  const contextValue: AuthContextValue = useMemo(() => ({
     isAuthenticated: authState.isAuthenticated,
     user: authState.user,
     role: (authState.user?.role as Role) || 'viewer',
@@ -64,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     hasPermission,
     hasRole
-  }
+  }), [authState.isAuthenticated, authState.isLoading, authState.error, userKey, login, logout, hasPermission, hasRole])
 
   return (
     <AuthContext.Provider value={contextValue}>

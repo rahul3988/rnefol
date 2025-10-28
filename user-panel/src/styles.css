@@ -993,6 +993,7 @@
 }
 
 /* ===== REVOLUTIONARY RESPONSIVE DESIGN ===== */
+/* Mobile First Approach */
 @media (max-width: 640px) {
   :root {
     --font-size-xs: 0.7rem;
@@ -1008,11 +1009,58 @@
   
   .glass-card {
     border-radius: 16px;
+    padding: 1rem;
   }
   
   .btn-primary {
-    padding: 12px 24px;
-    font-size: var(--font-size-base);
+    padding: 12px 20px;
+    font-size: 0.875rem;
+    min-height: 44px; /* Touch-friendly */
+  }
+  
+  .btn {
+    padding: 12px 20px;
+    font-size: 0.875rem;
+    min-height: 44px; /* Touch-friendly */
+  }
+  
+  .product-card {
+    padding: 0.75rem;
+  }
+  
+  /* Touch-friendly buttons */
+  button, a[role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Tablet */
+@media (min-width: 641px) and (max-width: 1024px) {
+  :root {
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 1.875rem;
+    --font-size-4xl: 2.25rem;
+    --font-size-5xl: 3rem;
+  }
+  
+  .glass-card {
+    border-radius: 18px;
+    padding: 1.25rem;
+  }
+  
+  .btn-primary {
+    padding: 14px 28px;
+    font-size: 0.9375rem;
+  }
+  
+  button, a[role="button"] {
+    min-height: 48px;
   }
 }
 
@@ -1023,6 +1071,13 @@
   
   .product-card:hover {
     transform: translateY(-15px) scale(1.03);
+  }
+}
+
+/* Extra large screens */
+@media (min-width: 1440px) {
+  .mx-auto.max-w-7xl {
+    max-width: 1280px;
   }
 }
 

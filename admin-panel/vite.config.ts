@@ -10,7 +10,8 @@ export default defineConfig({
       '/api': {
         target: 'http://192.168.1.66:4000',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        ws: true
       }
     }
   }

@@ -165,7 +165,7 @@ export default function Blog() {
         ) : error ? (
           <div className="text-center py-12">
             <p className="text-red-600 mb-4">{error}</p>
-            <p className="text-sm text-gray-500">Showing sample posts below</p>
+            <p className="text-sm text-gray-500">No posts available at the moment</p>
           </div>
         ) : null}
 
@@ -176,7 +176,7 @@ export default function Blog() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                 <div className="relative">
                   <img 
-                    src={post.images[0] || '/IMAGES/placeholder.jpg'} 
+                    src={post.images[0] || '/IMAGES/default-blog.jpg'} 
                     alt={post.title}
                     className="w-full h-96 lg:h-full object-cover"
                   />
@@ -204,7 +204,7 @@ export default function Blog() {
                     {post.excerpt}
                   </p>
                   <a 
-                    href={`#/blog/${post.id}`}
+                    href={`#/user/blog/${post.id}`}
                     className="inline-block px-8 py-4 text-white font-medium transition-all duration-300 text-sm tracking-wide uppercase shadow-lg"
                     style={{backgroundColor: '#1B4965'}}
                   >
@@ -222,7 +222,7 @@ export default function Blog() {
             <article key={post.id} className="bg-white rounded-lg shadow-sm group overflow-hidden">
               <div className="relative overflow-hidden">
                 <img 
-                  src={post.images[0] || '/IMAGES/placeholder.jpg'} 
+                  src={post.images[0] || '/IMAGES/default-blog.jpg'} 
                   alt={post.title}
                   className="w-full h-64 object-cover transition-transform duration-500 group-hover:scale-105"
                 />
@@ -250,7 +250,7 @@ export default function Blog() {
                   {post.excerpt}
                 </p>
                 <a 
-                  href={`#/blog/${post.id}`}
+                  href={`#/user/blog/${post.id}`}
                   className="inline-block px-6 py-3 text-white font-medium transition-all duration-300 text-xs tracking-wide uppercase shadow-lg"
                   style={{backgroundColor: '#4B97C9'}}
                 >

@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Users, Target, Plus, Edit, Trash2, Eye, Filter, Download, BarChart3, TrendingUp, Calendar, MapPin, ShoppingCart, Heart, Star } from 'lucide-react'
+import apiService from '../services/api'
 
 interface CustomAudience {
   id: string
@@ -27,92 +28,30 @@ interface AudienceCriteria {
 }
 
 export default function CustomAudience() {
-  const [audiences] = useState<CustomAudience[]>([
-    {
-      id: '1',
-      name: 'Skincare Enthusiasts',
-      description: 'Customers who have purchased skincare products',
-      size: 2500,
-      criteria: [
-        { field: 'category_preference', operator: 'contains', value: 'skincare' },
-        { field: 'total_orders', operator: 'greater_than', value: 1 }
-      ],
-      createdAt: '2024-01-15',
-      lastUpdated: '2024-01-20',
-      status: 'active',
-      tags: ['skincare', 'beauty', 'engaged'],
-      performance: {
-        reach: 2500,
-        engagement: 15.2,
-        conversion: 8.7,
-        revenue: 125000
-      }
-    },
-    {
-      id: '2',
-      name: 'High-Value Customers',
-      description: 'Customers with high lifetime value',
-      size: 800,
-      criteria: [
-        { field: 'total_spent', operator: 'greater_than', value: 10000 },
-        { field: 'total_orders', operator: 'greater_than', value: 5 }
-      ],
-      createdAt: '2024-01-10',
-      lastUpdated: '2024-01-18',
-      status: 'active',
-      tags: ['high-value', 'vip', 'loyal'],
-      performance: {
-        reach: 800,
-        engagement: 22.5,
-        conversion: 18.3,
-        revenue: 200000
-      }
-    },
-    {
-      id: '3',
-      name: 'Cart Abandoners',
-      description: 'Customers who abandoned their cart',
-      size: 1200,
-      criteria: [
-        { field: 'cart_status', operator: 'equals', value: 'abandoned' },
-        { field: 'cart_value', operator: 'greater_than', value: 500 }
-      ],
-      createdAt: '2024-01-12',
-      lastUpdated: '2024-01-19',
-      status: 'active',
-      tags: ['cart-abandonment', 'retargeting'],
-      performance: {
-        reach: 1200,
-        engagement: 8.3,
-        conversion: 12.5,
-        revenue: 75000
-      }
-    },
-    {
-      id: '4',
-      name: 'New Customers',
-      description: 'Recently registered customers',
-      size: 1500,
-      criteria: [
-        { field: 'registration_date', operator: 'greater_than', value: '2024-01-01' },
-        { field: 'total_orders', operator: 'less_than', value: 3 }
-      ],
-      createdAt: '2024-01-08',
-      lastUpdated: '2024-01-17',
-      status: 'draft',
-      tags: ['new', 'onboarding'],
-      performance: {
-        reach: 1500,
-        engagement: 12.8,
-        conversion: 6.2,
-        revenue: 45000
-      }
-    }
-  ])
-
+  const [audiences, setAudiences] = useState<CustomAudience[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('audiences')
   const [showCreateAudience, setShowCreateAudience] = useState(false)
   const [selectedAudience, setSelectedAudience] = useState<CustomAudience | null>(null)
+
+  useEffect(() => {
+    loadAudiencesData()
+  }, [])
+
+  const loadAudiencesData = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getCustomAudiences().catch(() => [])
+      setAudiences(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to load audiences data:', err)
+      setError('Failed to load audiences data')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const totalStats = {
     totalAudiences: audiences.length,
@@ -167,6 +106,40 @@ export default function CustomAudience() {
     { id: 'insights', label: 'Insights', icon: TrendingUp }
   ]
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading audiences...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error</h3>
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={loadAudiencesData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
       {/* Header */}
@@ -179,13 +152,22 @@ export default function CustomAudience() {
             Create and manage targeted customer audiences for personalized marketing
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateAudience(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Create Audience</span>
-        </button>
+        <div className="flex space-x-3">
+          <button
+            onClick={loadAudiencesData}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Target className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => setShowCreateAudience(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Audience</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}

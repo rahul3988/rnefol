@@ -43,7 +43,7 @@ const VideoManager: React.FC = () => {
     formData.append('file', file)
     formData.append('type', type)
 
-    const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/upload`, {
+    const response = await fetch(`http://192.168.1.66:4000/api/upload`, {
       method: 'POST',
       body: formData
     })
@@ -97,7 +97,7 @@ const VideoManager: React.FC = () => {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/videos`)
+      const response = await fetch(`http://192.168.1.66:4000/api/videos`)
       if (response.ok) {
         const data = await response.json()
         setVideos(data)
@@ -162,8 +162,8 @@ const VideoManager: React.FC = () => {
       const videoType = selectedFile ? 'local' : getVideoTypeFromUrl(formData.video_url)
 
       const url = editingVideo 
-        ? `${window.location.protocol}//${window.location.hostname}:4000/api/videos/${editingVideo.id}`
-        : `${window.location.protocol}//${window.location.hostname}:4000/api/videos`
+        ? `http://192.168.1.66:4000/api/videos/${editingVideo.id}`
+        : `http://192.168.1.66:4000/api/videos`
       
       const method = editingVideo ? 'PUT' : 'POST'
 
@@ -231,7 +231,7 @@ const VideoManager: React.FC = () => {
     if (!confirm('Are you sure you want to delete this video?')) return
 
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/videos/${id}`, {
+      const response = await fetch(`http://192.168.1.66:4000/api/videos/${id}`, {
         method: 'DELETE'
       })
 
@@ -245,7 +245,7 @@ const VideoManager: React.FC = () => {
 
   const toggleActive = async (video: Video) => {
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/videos/${video.id}`, {
+      const response = await fetch(`http://192.168.1.66:4000/api/videos/${video.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -471,9 +471,9 @@ const VideoManager: React.FC = () => {
                     className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder={
                       formData.video_type === 'instagram' ? 'https://www.instagram.com/p/...' :
-                      formData.video_type === 'facebook' ? 'https://www.facebook.com/watch/?v=...' :
-                      formData.video_type === 'youtube' ? 'https://www.youtube.com/watch?v=...' :
-                      'https://example.com/video.mp4'
+                      formData.video_type === 'facebook' ? 'https://www.facebook.com/watch/?v=VIDEO_ID' :
+                      formData.video_type === 'youtube' ? 'https://www.youtube.com/watch?v=VIDEO_ID' :
+                      'https://your-domain.com/video.mp4'
                     }
                     required
                   />
@@ -495,7 +495,7 @@ const VideoManager: React.FC = () => {
                   value={formData.redirect_url}
                   onChange={(e) => setFormData({ ...formData, redirect_url: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="https://example.com/product"
+                  placeholder="https://your-domain.com/product"
                   required
                 />
               </div>
@@ -525,7 +525,7 @@ const VideoManager: React.FC = () => {
                       value={formData.thumbnail_url}
                       onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
                       className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="https://example.com/thumbnail.jpg"
+                      placeholder="https://your-domain.com/thumbnail.jpg"
                     />
                   </div>
                 </div>
