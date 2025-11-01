@@ -8,6 +8,7 @@ export { default as Login } from './system/Login'
 export { default as Products } from './catalog/Products'
 export { default as Analytics } from './analytics/Analytics'
 export { default as Marketing } from './marketing/Marketing'
+export { default as WhatsAppSubscriptions } from './marketing/WhatsAppSubscriptions'
 export { default as Discounts } from './discounts/Discounts'
 export { default as FacebookInstagram } from './sales/FacebookInstagram'
 export { default as OnlineStore } from './sales/OnlineStore'
@@ -27,6 +28,7 @@ export { default as LoyaltyProgramManagement } from './users/LoyaltyProgramManag
 // New Content Management Pages
 export { default as StaticPagesManagement } from './content/StaticPagesManagement'
 export { default as CommunityManagement } from './content/CommunityManagement'
+export { default as HomepageLayoutManager } from './HomepageLayoutManager'
 
 // New E-commerce Management Pages
 export { default as CartCheckoutManagement } from './ecommerce/CartCheckoutManagement'
@@ -34,4 +36,10 @@ export { default as CartCheckoutManagement } from './ecommerce/CartCheckoutManag
 // Affiliate Management Pages
 export { default as AffiliateManagement } from './AffiliateManagement'
 export { default as AffiliateRequests } from './AffiliateRequests'
+
+// System - Staff & Permissions
+export { default as Staff } from './system/Staff'
+export { default as RolesPermissions } from './system/RolesPermissions'
+export { default as AuditLogs } from './system/AuditLogs'
+export { default as AlertSettings } from './system/AlertSettings'
 

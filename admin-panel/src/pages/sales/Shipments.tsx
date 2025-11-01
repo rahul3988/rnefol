@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { socketService } from '../../services/socket'
+import { useToast } from '../../components/ToastProvider'
 
 type Shipment = {
   id: number
@@ -17,10 +18,18 @@ type Shipment = {
 }
 
 export default function Shipments() {
+  const { notify } = useToast()
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
+  const [pickupPin, setPickupPin] = useState('')
+  const [deliveryPin, setDeliveryPin] = useState('')
+  const [weight, setWeight] = useState('0.5')
+  const [isCOD, setIsCOD] = useState(false)
+  const [serviceability, setServiceability] = useState<any | null>(null)
+  const [pickupDate, setPickupDate] = useState('')
+  const [ndr, setNdr] = useState<any | null>(null)
 
   const load = async () => {
     try {
@@ -75,9 +84,12 @@ export default function Shipments() {
       if (res.ok) {
         const data = await res.json()
         console.log('Shiprocket shipment created:', data)
-        load() // Reload shipments
+        load()
+        // Reload shipments
+        notify('success','Shipment created')
       } else {
         setError('Failed to create Shiprocket shipment')
+        notify('error','Failed to create Shiprocket shipment')
       }
     } catch (e) {
       setError('Failed to create Shiprocket shipment')
@@ -100,9 +112,11 @@ export default function Shipments() {
       if (res.ok) {
         const data = await res.json()
         console.log('Shipment status updated:', data)
-        load() // Reload shipments
+        load()
+        notify('success','Shipment updated')
       } else {
         setError('Failed to update shipment status')
+        notify('error','Failed to update shipment status')
       }
     } catch (e) {
       setError('Failed to update shipment status')
@@ -133,6 +147,130 @@ export default function Shipments() {
         >
           Refresh
         </button>
+      </div>
+
+      {/* Pincode Serviceability Checker */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+        <h2 className="text-lg font-semibold mb-3 text-slate-900 dark:text-slate-100">Pincode Serviceability</h2>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300 mb-1">Pickup Postcode</label>
+            <input value={pickupPin} onChange={e => setPickupPin(e.target.value)} placeholder="110001" className="border px-3 py-2 rounded w-40 dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300 mb-1">Delivery Postcode</label>
+            <input value={deliveryPin} onChange={e => setDeliveryPin(e.target.value)} placeholder="560001" className="border px-3 py-2 rounded w-40 dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300 mb-1">Weight (kg)</label>
+            <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} className="border px-3 py-2 rounded w-28 dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+          </div>
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input type="checkbox" checked={isCOD} onChange={e => setIsCOD(e.target.checked)} /> COD
+          </label>
+          <button
+            onClick={async () => {
+              try {
+                setServiceability(null)
+                const params = new URLSearchParams({
+                  pickup_postcode: pickupPin,
+                  delivery_postcode: deliveryPin,
+                  weight,
+                  cod: isCOD ? '1' : '0',
+                })
+                const res = await fetch(`${apiBase}/api/shiprocket/serviceability?${params.toString()}`, {
+                  headers: { 'x-user-role': 'admin', 'x-user-permissions': 'shipping:read' }
+                })
+                const data = await res.json()
+                setServiceability(data)
+              } catch (_) {
+                setServiceability({ success: false, message: 'Failed to check serviceability' })
+              }
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          >
+            Check Serviceability
+          </button>
+        </div>
+        {serviceability && (
+          <pre className="mt-3 text-xs bg-slate-50 dark:bg-slate-900 p-3 rounded overflow-auto max-h-64">{JSON.stringify(serviceability, null, 2)}</pre>
+        )}
+      </div>
+
+      {/* Manifest & Pickup */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+        <h2 className="text-lg font-semibold mb-3 text-slate-900 dark:text-slate-100">Manifest & Pickup</h2>
+        <div className="flex flex-wrap items-end gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const orderIds = shipments.map(s => Number(s.order_id)).filter(Boolean)
+                const res = await fetch(`${apiBase}/api/shiprocket/manifest`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin', 'x-user-permissions': 'shipping:update' },
+                  body: JSON.stringify({ orderIds })
+                })
+                const data = await res.json()
+                if (!res.ok) throw new Error(data?.error || 'Failed')
+                alert(`Manifest Ready: ${data.manifest_url}`)
+              } catch (e: any) {
+                alert(e?.message || 'Failed to generate manifest')
+              }
+            }}
+            className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-700"
+          >
+            Generate Manifest (All)
+          </button>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300 mb-1">Pickup Date</label>
+            <input type="date" value={pickupDate} onChange={e=>setPickupDate(e.target.value)} className="border px-3 py-2 rounded w-44 dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+          </div>
+          <button
+            onClick={async () => {
+              if (!pickupDate) return alert('Choose pickup date')
+              try {
+                const orderIds = shipments.map(s => Number(s.order_id)).filter(Boolean)
+                const res = await fetch(`${apiBase}/api/shiprocket/pickup`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin', 'x-user-permissions': 'shipping:update' },
+                  body: JSON.stringify({ pickup_date: pickupDate, orderIds })
+                })
+                const data = await res.json()
+                if (!res.ok) throw new Error(data?.error || 'Failed')
+                alert('Pickup scheduled')
+              } catch (e: any) {
+                alert(e?.message || 'Failed to schedule pickup')
+              }
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          >
+            Schedule Pickup
+          </button>
+        </div>
+      </div>
+
+      {/* NDR */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+        <h2 className="text-lg font-semibold mb-3 text-slate-900 dark:text-slate-100">Non-Delivery Reports (NDR)</h2>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(`${apiBase}/api/shiprocket/ndr`, { headers: { 'x-user-role': 'admin', 'x-user-permissions': 'shipping:read' } })
+                const data = await res.json()
+                setNdr(data)
+              } catch (_) {
+                setNdr({ items: [] })
+              }
+            }}
+            className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-700"
+          >
+            Load NDRs
+          </button>
+        </div>
+        {ndr && (
+          <pre className="mt-3 text-xs bg-slate-50 dark:bg-slate-900 p-3 rounded overflow-auto max-h-64">{JSON.stringify(ndr, null, 2)}</pre>
+        )}
       </div>
 
       {error && (
@@ -235,6 +373,25 @@ export default function Shipments() {
                           Track
                         </a>
                       )}
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`${apiBase}/api/shiprocket/rto/${shipment.id}`, {
+                              method: 'POST',
+                              headers: { 'x-user-role': 'admin', 'x-user-permissions': 'shipping:update' }
+                            })
+                            const data = await res.json()
+                            if (!res.ok) throw new Error(data?.error || 'Failed')
+                            alert('Marked RTO')
+                            load()
+                          } catch (e: any) {
+                            alert(e?.message || 'Failed to mark RTO')
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 ml-2"
+                      >
+                        Mark RTO
+                      </button>
                     </td>
                   </tr>
                 ))}

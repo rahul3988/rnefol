@@ -77,6 +77,14 @@ class UserSocketService {
       this.notifyListeners('message', data)
     })
 
+    // Live chat events
+    this.socket.on('live-chat:message', (data) => {
+      this.notifyListeners('live-chat:message', data)
+    })
+    this.socket.on('live-chat:typing', (data) => {
+      this.notifyListeners('live-chat:typing', data)
+    })
+
     this.socket.on('error', (error) => {
       console.error('Socket error:', error)
     })

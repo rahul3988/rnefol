@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import LiveMonitoring from '../components/LiveMonitoring'
+import { socketService } from '../services/socket'
 
 interface DashboardMetrics {
   sessions: number
@@ -30,7 +31,20 @@ const Dashboard = () => {
   const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`
 
   useEffect(() => {
+    // Ensure socket connection for live monitoring
+    if (!socketService.isConnected()) {
+      socketService.connect()
+    }
+    
     loadDashboardData()
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      loadDashboardData()
+    }, 30000)
+    
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadDashboardData = async () => {
@@ -46,21 +60,48 @@ const Dashboard = () => {
 
       if (metricsRes.ok) {
         const metricsData = await metricsRes.json()
-        setMetrics(metricsData)
+        // Handle both success wrapper and direct data
+        const data = metricsData.data || metricsData
+        setMetrics(data)
+      } else {
+        // Set default values if API fails
+        setMetrics({
+          sessions: 0,
+          sessionsChange: 0,
+          totalSales: 0,
+          salesChange: 0,
+          orders: 0,
+          ordersChange: 0,
+          conversionRate: 0,
+          conversionChange: 0
+        })
       }
 
       if (actionItemsRes.ok) {
         const actionItemsData = await actionItemsRes.json()
-        setActionItems(actionItemsData.items || [])
+        const items = actionItemsData.data?.items || actionItemsData.items || []
+        setActionItems(items)
       }
 
       if (visitorsRes.ok) {
         const visitorsData = await visitorsRes.json()
-        setLiveVisitors(visitorsData.count || 0)
+        const count = visitorsData.data?.count || visitorsData.count || 0
+        setLiveVisitors(count)
       }
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
       setError('Failed to load dashboard data')
+      // Set default values on error
+      setMetrics({
+        sessions: 0,
+        sessionsChange: 0,
+        totalSales: 0,
+        salesChange: 0,
+        orders: 0,
+        ordersChange: 0,
+        conversionRate: 0,
+        conversionChange: 0
+      })
     } finally {
       setLoading(false)
     }
@@ -141,7 +182,8 @@ const Dashboard = () => {
         <div className="flex items-center space-x-4">
           <button 
             onClick={() => navigate('/admin/analytics')}
-            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            title="View analytics for last 30 days"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -150,7 +192,8 @@ const Dashboard = () => {
           </button>
           <button 
             onClick={() => navigate('/admin/analytics')}
-            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            title="View analytics for all channels"
           >
             <span>All channels</span>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,8 +202,8 @@ const Dashboard = () => {
           </button>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-          <span className="text-sm text-gray-600">{liveVisitors} live visitors</span>
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{liveVisitors} live visitors</span>
         </div>
       </div>
 
@@ -204,7 +247,11 @@ const Dashboard = () => {
                 <span className="text-2xl">{metric.icon}</span>
                 <h3 className="text-sm font-medium text-gray-600">{metric.title}</h3>
               </div>
-              <button className="text-gray-400 hover:text-gray-600">
+              <button 
+                onClick={() => navigate('/admin/analytics')}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                title="View detailed analytics"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
@@ -249,12 +296,13 @@ const Dashboard = () => {
         </div>
         
         {/* Simple Chart Placeholder */}
-        <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center">
+        <div className="h-64 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-700">
           <div className="text-center">
-            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <p className="text-gray-500">Performance chart will be displayed here</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Performance chart will be displayed here</p>
+            <p className="text-gray-400 dark:text-gray-500 text-xs mt-2">Chart integration coming soon</p>
           </div>
         </div>
       </div>

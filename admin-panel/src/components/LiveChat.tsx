@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
-import { MessageSquare, Users, Send, BarChart3, Calendar, Target, Eye, MousePointer, Clock, TrendingUp, Filter, Plus, Phone, Video, FileText, Image, Smile, Mic, MicOff, Headphones, Settings, CheckCircle } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { MessageSquare, Send, Search, MoreVertical, Phone, Video, Image as ImageIcon, Smile, Mic, Paperclip } from 'lucide-react'
 import apiService from '../services/api'
+import { socketService } from '../services/socket'
 
 interface ChatMessage {
   id: string
@@ -32,41 +33,16 @@ interface ChatSession {
   referrer?: string
 }
 
-interface Agent {
-  id: string
-  name: string
-  email: string
-  status: 'online' | 'busy' | 'away' | 'offline'
-  activeSessions: number
-  totalSessions: number
-  rating: number
-  responseTime: number
-  specialization: string[]
-}
-
-interface ChatWidget {
-  id: string
-  name: string
-  isActive: boolean
-  position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
-  theme: 'light' | 'dark' | 'custom'
-  welcomeMessage: string
-  offlineMessage: string
-  businessHours: {
-    enabled: boolean
-    timezone: string
-    schedule: {
-      [key: string]: { start: string; end: string; enabled: boolean }
-    }
-  }
-}
-
 export default function LiveChat() {
   const [activeSessions, setActiveSessions] = useState<ChatSession[]>([])
-  const [agents, setAgents] = useState<Agent[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
+  const [newMessage, setNewMessage] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadChatData()
@@ -76,521 +52,405 @@ export default function LiveChat() {
     try {
       setLoading(true)
       setError('')
-      const [sessionsData, agentsData] = await Promise.all([
-        apiService.getLiveChatSessions().catch(() => []),
-        apiService.getLiveChatAgents().catch(() => [])
-      ])
-      
-      if (Array.isArray(sessionsData) && sessionsData.length > 0) {
-        setActiveSessions(sessionsData)
-        setCurrentSession(sessionsData[0])
+      const sessionsData = await apiService.getLiveChatSessions().catch(() => [])
+      // Normalize API (snake_case -> camelCase) and ensure name/email fallbacks
+      const normalized = Array.isArray(sessionsData) ? sessionsData.map((s: any) => ({
+        id: String(s.id),
+        customerName: s.customerName || s.customer_name || s.customerEmail || s.customer_email || 'User',
+        customerEmail: s.customerEmail || s.customer_email || '',
+        customerPhone: s.customerPhone || s.customer_phone,
+        status: s.status || 'active',
+        priority: s.priority || 'low',
+        assignedAgent: s.assignedAgent || s.assigned_agent,
+        lastMessage: s.lastMessage || s.last_message || '',
+        lastMessageTime: s.lastMessageTime || s.last_message_time || '',
+        messageCount: Number(s.messageCount ?? s.message_count ?? 0),
+        tags: s.tags || [],
+        notes: s.notes || '',
+        customerLocation: s.customerLocation || s.customer_location,
+        deviceInfo: s.deviceInfo || s.device_info,
+        referrer: s.referrer
+      })) : []
+
+      if (normalized.length > 0) {
+        setActiveSessions(normalized)
+        if (!currentSession) {
+          setCurrentSession(normalized[0])
+        }
       } else {
         setActiveSessions([])
         setCurrentSession(null)
       }
       
-      setAgents(Array.isArray(agentsData) ? agentsData : [])
       setMessages([])
     } catch (err) {
       console.error('Failed to load chat data:', err)
       setError('Failed to load chat data')
       setActiveSessions([])
-      setAgents([])
       setMessages([])
     } finally {
       setLoading(false)
     }
   }
 
-  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
-  const [newMessage, setNewMessage] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
-  const [showWidgetSettings, setShowWidgetSettings] = useState(false)
-  const [showAgentManagement, setShowAgentManagement] = useState(false)
-
-  const totalStats = {
-    totalSessions: activeSessions.length,
-    activeSessions: activeSessions.filter(s => s.status === 'active').length,
-    waitingSessions: activeSessions.filter(s => s.status === 'waiting').length,
-    resolvedSessions: activeSessions.filter(s => s.status === 'resolved').length,
-    onlineAgents: agents.filter(a => a.status === 'online').length,
-    averageResponseTime: agents.length > 0 ? agents.reduce((sum, agent) => sum + agent.responseTime, 0) / agents.length : 0
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">Loading live chat data...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error}
-          <button onClick={loadChatData} className="ml-4 underline">Retry</button>
-        </div>
-      </div>
-    )
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-200'
-      case 'waiting': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900 dark:text-yellow-200'
-      case 'resolved': return 'text-blue-600 bg-blue-100 dark:bg-blue-900 dark:text-blue-200'
-      case 'closed': return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
-      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
+  // Load messages when session changes and subscribe to socket events
+  useEffect(() => {
+    let unsubscribeMsg: (() => void) | undefined
+    let unsubscribeTyping: (() => void) | undefined
+    const joinAndFetch = async () => {
+      if (!currentSession) {
+        setMessages([])
+        return
+      }
+      socketService.emit('live-chat:join-session', { sessionId: currentSession.id })
+      try {
+        const data = await apiService.getLiveChatMessages(currentSession.id)
+        const mapped: ChatMessage[] = Array.isArray(data) ? data.map((m: any) => ({
+          id: String(m.id),
+          sender: m.sender,
+          senderName: m.sender_name || '',
+          message: m.message,
+          timestamp: m.created_at,
+          type: m.type || 'text',
+          isRead: !!m.is_read
+        })) : []
+        const uniqueById = Array.from(new Map(mapped.map(m => [m.id, m])).values())
+        setMessages(uniqueById)
+      } catch (e) {
+        console.error('Failed to load messages', e)
+        setMessages([])
+      }
+      unsubscribeMsg = socketService.subscribe('live-chat:message', (data: any) => {
+        if (data?.session_id?.toString() === currentSession.id.toString()) {
+          const incoming: ChatMessage = {
+            id: String(data.id),
+            sender: data.sender,
+            senderName: data.sender_name || '',
+            message: data.message,
+            timestamp: data.created_at,
+            type: data.type || 'text',
+            isRead: !!data.is_read
+          }
+          setMessages(prev => {
+            if (prev.some(m => m.id === incoming.id)) return prev
+            return [...prev, incoming]
+          })
+        }
+      })
+      unsubscribeTyping = socketService.subscribe('live-chat:typing', (data: any) => {
+        if (data?.sessionId?.toString() === currentSession.id.toString()) {
+          setIsTyping(!!data.isTyping && data.sender === 'customer')
+        }
+      })
     }
-  }
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'text-red-600 bg-red-100 dark:bg-red-900 dark:text-red-200'
-      case 'high': return 'text-orange-600 bg-orange-100 dark:bg-orange-900 dark:text-orange-200'
-      case 'medium': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900 dark:text-yellow-200'
-      case 'low': return 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-200'
-      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
+    joinAndFetch()
+    return () => {
+      if (unsubscribeMsg) unsubscribeMsg()
+      if (unsubscribeTyping) unsubscribeTyping()
     }
-  }
+  }, [currentSession])
 
-  const getAgentStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-200'
-      case 'busy': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900 dark:text-yellow-200'
-      case 'away': return 'text-orange-600 bg-orange-100 dark:bg-orange-900 dark:text-orange-200'
-      case 'offline': return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
-      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-200'
-    }
-  }
+  // Auto scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      // In a real app, this would send the message via WebSocket
-      console.log('Sending message:', newMessage)
+  const handleSendMessage = async () => {
+    if (!currentSession) return
+    const text = newMessage.trim()
+    if (!text) return
+    try {
+      await apiService.sendLiveChatMessage({
+        sessionId: currentSession.id,
+        sender: 'agent',
+        senderName: 'Admin Agent',
+        message: text,
+        type: 'text'
+      })
       setNewMessage('')
+      socketService.emit('live-chat:typing', { sessionId: currentSession.id, sender: 'agent', isTyping: false })
+    } catch (e) {
+      console.error('Failed to send message', e)
     }
   }
 
   const handleSessionSelect = (session: ChatSession) => {
     setCurrentSession(session)
+    setNewMessage('')
   }
 
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value)
     if (!isTyping && e.target.value.length > 0) {
       setIsTyping(true)
-      // In a real app, this would send typing indicator via WebSocket
+      if (currentSession) {
+        socketService.emit('live-chat:typing', { sessionId: currentSession.id, sender: 'agent', isTyping: true })
+      }
     } else if (isTyping && e.target.value.length === 0) {
       setIsTyping(false)
+      if (currentSession) {
+        socketService.emit('live-chat:typing', { sessionId: currentSession.id, sender: 'agent', isTyping: false })
+      }
     }
   }
 
+  const formatTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diff = now.getTime() - date.getTime()
+      const minutes = Math.floor(diff / 60000)
+      const hours = Math.floor(minutes / 60)
+      const days = Math.floor(hours / 24)
+
+      if (minutes < 1) return 'Just now'
+      if (minutes < 60) return `${minutes}m ago`
+      if (hours < 24) return `${hours}h ago`
+      if (days < 7) return `${days}d ago`
+      return date.toLocaleDateString()
+    } catch {
+      return timestamp
+    }
+  }
+
+  const formatMessageTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp)
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    } catch {
+      return timestamp
+    }
+  }
+
+  const filteredSessions = activeSessions.filter(session => {
+    const name = (session.customerName || '').toLowerCase()
+    const email = (session.customerEmail || '').toLowerCase()
+    const q = (searchQuery || '').toLowerCase()
+    return name.includes(q) || email.includes(q)
+  })
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading live chat...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            Live Chat Support
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            Real-time customer support and engagement platform
-          </p>
-        </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={loadChatData}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowWidgetSettings(true)}
-            className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Widget Settings</span>
-          </button>
-          <button
-            onClick={() => setShowAgentManagement(true)}
-            className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center space-x-2"
-          >
-            <Users className="h-4 w-4" />
-            <span>Manage Agents</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Total Sessions</h3>
-              <p className="text-3xl font-bold">{totalStats.totalSessions}</p>
-            </div>
-            <MessageSquare className="h-8 w-8" />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Active</h3>
-              <p className="text-3xl font-bold">{totalStats.activeSessions}</p>
-            </div>
-            <Users className="h-8 w-8" />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Waiting</h3>
-              <p className="text-3xl font-bold">{totalStats.waitingSessions}</p>
-            </div>
-            <Clock className="h-8 w-8" />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Online Agents</h3>
-              <p className="text-3xl font-bold">{totalStats.onlineAgents}</p>
-            </div>
-            <Headphones className="h-8 w-8" />
-          </div>
-        </div>
-      </div>
-
-      {/* Agent Status */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">
-          Agent Status
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {agents.map((agent) => (
-            <div key={agent.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                  {agent.name}
-                </h3>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAgentStatusColor(agent.status)}`}>
-                  {agent.status}
-                </span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Active Sessions:</span>
-                  <span className="font-semibold">{agent.activeSessions}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Total Sessions:</span>
-                  <span className="font-semibold">{agent.totalSessions}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Rating:</span>
-                  <span className="font-semibold">{agent.rating}/5</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Response Time:</span>
-                  <span className="font-semibold">{agent.responseTime}m</span>
-                </div>
-              </div>
-              <div className="mt-3">
-                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Specialization:</p>
-                <div className="flex flex-wrap gap-1">
-                  {agent.specialization.map((spec, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded">
-                      {spec}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Chat Interface */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sessions List */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Chat Sessions
-            </h2>
-          </div>
-          <div className="max-h-96 overflow-y-auto">
-            {activeSessions.map((session) => (
-              <div
-                key={session.id}
-                onClick={() => handleSessionSelect(session)}
-                className={`p-4 border-b border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 ${
-                  currentSession?.id === session.id ? 'bg-blue-50 dark:bg-blue-900' : ''
-                }`}
+    <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - User List (WhatsApp style) */}
+        <div className="w-1/3 border-r border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col">
+          {/* Header */}
+          <div className="p-4 bg-green-600 dark:bg-green-700">
+            <div className="flex items-center justify-between mb-3">
+              <h1 className="text-xl font-semibold text-white">Chats</h1>
+              <button
+                onClick={loadChatData}
+                className="text-white hover:text-gray-200 transition-colors"
+                title="Refresh"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                    {session.customerName}
-                  </h3>
-                  <div className="flex space-x-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(session.status)}`}>
-                      {session.status}
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(session.priority)}`}>
-                      {session.priority}
-                    </span>
+                <MessageSquare className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search or start new chat"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400"
+              />
+            </div>
+          </div>
+
+          {/* User List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredSessions.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No chat sessions found</p>
+              </div>
+            ) : (
+              filteredSessions.map((session) => (
+                <div
+                  key={session.id}
+                  onClick={() => handleSessionSelect(session)}
+                  className={`p-4 border-b border-gray-200 dark:border-slate-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
+                    currentSession?.id === session.id ? 'bg-gray-100 dark:bg-slate-700' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                      <span className="text-white font-semibold text-lg">
+                        {((session.customerName || session.customerEmail || 'U').charAt(0) || 'U').toUpperCase()}
+                      </span>
+                    </div>
+                    {/* User Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {session.customerName || session.customerEmail || 'User'}
+                        </h3>
+                        {session.lastMessageTime && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 ml-2">
+                            {formatTime(session.lastMessageTime)}
+                          </span>
+                        )}
+                      </div>
+                      {session.customerEmail && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 truncate mb-1">
+                          {session.customerEmail}
+                        </p>
+                      )}
+                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                        {session.lastMessage || 'No messages yet'}
+                      </p>
+                      {session.status === 'active' && (
+                        <span className="inline-block mt-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">
-                  {session.customerEmail}
-                </p>
-                <p className="text-sm text-slate-500 dark:text-slate-500 truncate">
-                  {session.lastMessage}
-                </p>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-500">
-                    {session.lastMessageTime}
-                  </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-500">
-                    {session.messageCount} messages
-                  </span>
-                </div>
-                {session.assignedAgent && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    Assigned to: {session.assignedAgent}
-                  </p>
-                )}
-                {session.customerLocation && (
-                  <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                    📍 {session.customerLocation}
-                  </p>
-                )}
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
-        {/* Chat Messages */}
-        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg flex flex-col">
+        {/* Right Side - Chat Messages */}
+        <div className="flex-1 flex flex-col bg-gray-50 dark:bg-slate-900">
           {currentSession ? (
             <>
               {/* Chat Header */}
-              <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">
-                      {currentSession.customerName}
-                    </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      {currentSession.customerEmail}
-                    </p>
-                  </div>
-                  <div className="flex space-x-2">
-                    <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                      <Phone className="h-4 w-4" />
-                    </button>
-                    <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                      <Video className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex space-x-2 mt-2">
-                  {currentSession.tags.map((tag, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full">
-                      {tag}
+              <div className="bg-green-600 dark:bg-green-700 px-4 py-3 flex items-center justify-between border-b border-green-700 dark:border-green-800">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {/* Avatar */}
+                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-600 font-semibold">
+                      {((currentSession.customerName || currentSession.customerEmail || 'U').charAt(0) || 'U').toUpperCase()}
                     </span>
-                  ))}
+                  </div>
+                  {/* User Info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-white truncate">
+                      {currentSession.customerName || currentSession.customerEmail || 'User'}
+                    </h3>
+                    {currentSession.customerEmail && (
+                      <p className="text-sm text-green-100 truncate">
+                        {currentSession.customerEmail}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-                  <span>📍 {currentSession.customerLocation}</span>
-                  <span className="ml-4">🖥️ {currentSession.deviceInfo}</span>
-                  <span className="ml-4">🔗 {currentSession.referrer}</span>
-                </div>
+                {/* Actions removed as requested */}
               </div>
 
-              {/* Messages */}
-              <div className="flex-1 p-4 overflow-y-auto max-h-96">
-                <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.sender === 'customer' ? 'justify-start' : 'justify-end'}`}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          message.sender === 'customer'
-                            ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
-                            : 'bg-blue-600 text-white'
-                        }`}
-                      >
-                        <p className="text-sm">{message.message}</p>
-                        <p className={`text-xs mt-1 ${
-                          message.sender === 'customer'
-                            ? 'text-slate-500 dark:text-slate-400'
-                            : 'text-blue-100'
-                        }`}>
-                          {message.timestamp}
-                        </p>
-                      </div>
+              {/* Messages Area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#ECE5DD] dark:bg-slate-800">
+                {messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-gray-500 dark:text-gray-400">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No messages yet. Start the conversation!</p>
                     </div>
-                  ))}
-                  {isTyping && (
-                    <div className="flex justify-start">
-                      <div className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-lg">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  </div>
+                ) : (
+                  <>
+                    {messages.map((message) => (
+                      <div
+                        key={`${message.id}-${message.timestamp || ''}`}
+                        className={`flex ${message.sender === 'customer' ? 'justify-start' : 'justify-end'}`}
+                      >
+                        <div className={`max-w-[65%] rounded-lg px-3 py-2 shadow-sm ${
+                          message.sender === 'customer'
+                            ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100'
+                            : 'bg-green-500 text-white'
+                        }`}>
+                          {message.sender === 'customer' && (
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1 font-medium">
+                              {message.senderName}
+                            </p>
+                          )}
+                          <p className="text-sm whitespace-pre-wrap break-words">{message.message}</p>
+                          <div className={`flex items-center justify-end gap-1 mt-1 ${
+                            message.sender === 'customer'
+                              ? 'text-gray-500 dark:text-gray-400'
+                              : 'text-green-50'
+                          }`}>
+                            <span className="text-xs">
+                              {formatMessageTime(message.timestamp)}
+                            </span>
+                            {message.sender === 'agent' && message.isRead && (
+                              <span className="text-xs">✓✓</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    ))}
+                    {isTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-white dark:bg-slate-700 px-3 py-2 rounded-lg shadow-sm">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
               </div>
 
               {/* Message Input */}
-              <div className="p-4 border-t border-slate-200 dark:border-slate-700">
-                <div className="flex space-x-2">
-                  <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                    <Image className="h-4 w-4" />
+              <div className="bg-gray-100 dark:bg-slate-800 px-4 py-3 border-t border-gray-300 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <button className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                    <Smile className="h-5 w-5" />
                   </button>
-                  <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                    <FileText className="h-4 w-4" />
-                  </button>
-                  <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                    <Smile className="h-4 w-4" />
-                  </button>
-                  <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded">
-                    <Mic className="h-4 w-4" />
+                  <button className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                    <Paperclip className="h-5 w-5" />
                   </button>
                   <input
                     type="text"
                     value={newMessage}
                     onChange={handleTyping}
-                    placeholder="Type your message..."
-                    className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Type a message"
+                    className="flex-1 px-4 py-2 bg-white dark:bg-slate-700 rounded-full text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
-                  <button
-                    onClick={handleSendMessage}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
+                  {newMessage.trim() ? (
+                    <button
+                      onClick={handleSendMessage}
+                      className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700 transition-colors"
+                    >
+                      <Send className="h-5 w-5" />
+                    </button>
+                  ) : (
+                    <button className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                      <Mic className="h-5 w-5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <MessageSquare className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600 dark:text-slate-400">
-                  Select a chat session to start conversation
-                </p>
+            <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-slate-900">
+              <div className="text-center text-gray-500 dark:text-gray-400">
+                <MessageSquare className="h-20 w-20 mx-auto mb-4 opacity-30" />
+                <p className="text-lg">Select a chat to start messaging</p>
+                <p className="text-sm mt-2">Choose a conversation from the left panel</p>
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Chat Widget Preview */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">
-          Chat Widget Preview
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
-              Desktop Preview
-            </h3>
-            <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-700">
-              <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm">
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-semibold">N</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-900 dark:text-slate-100">Nefol Support</h4>
-                    <p className="text-xs text-green-600">Online</p>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                  Hi! How can we help you today?
-                </p>
-                <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg text-sm hover:bg-blue-700 transition-colors">
-                  Start Chat
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div>
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
-              Mobile Preview
-            </h3>
-            <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-700">
-              <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm max-w-xs mx-auto">
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-semibold">N</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Nefol Support</h4>
-                    <p className="text-xs text-green-600">Online</p>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                  Hi! How can we help you today?
-                </p>
-                <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg text-sm hover:bg-blue-700 transition-colors">
-                  Start Chat
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Chat Best Practices */}
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg p-6 text-white">
-        <h2 className="text-2xl font-bold mb-4">Live Chat Best Practices</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-xl font-bold">1</span>
-            </div>
-            <h3 className="font-semibold mb-2">Quick Response</h3>
-            <p className="text-sm opacity-90">
-              Respond to customer messages within 2 minutes for optimal customer satisfaction.
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-xl font-bold">2</span>
-            </div>
-            <h3 className="font-semibold mb-2">Proactive Engagement</h3>
-            <p className="text-sm opacity-90">
-              Use visitor tracking to proactively engage customers who might need help.
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-xl font-bold">3</span>
-            </div>
-            <h3 className="font-semibold mb-2">Personal Touch</h3>
-            <p className="text-sm opacity-90">
-              Use customer names and personalize conversations to create better connections.
-            </p>
-          </div>
         </div>
       </div>
     </div>

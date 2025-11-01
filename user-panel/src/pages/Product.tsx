@@ -3,8 +3,14 @@ import type { Product } from '../types'
 import { useCart } from '../contexts/CartContext'
 import { useAuth } from '../contexts/AuthContext'
 import { getApiBase } from '../utils/apiBase'
-import AuthGuard from '../components/AuthGuard'
 import { userSocketService } from '../services/socket'
+import { api } from '../services/api'
+import { getHeaders } from '../utils/session'
+import StickyAddToCart from '../components/StickyAddToCart'
+import ShareProduct from '../components/ShareProduct'
+import ImageZoom from '../components/ImageZoom'
+import RelatedProductsCarousel from '../components/RelatedProductsCarousel'
+import RecentlyViewed from '../components/RecentlyViewed'
 
 export default function ProductPage() {
   const [product, setProduct] = useState<Product | null>(null)
@@ -15,6 +21,9 @@ export default function ProductPage() {
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({})
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showImageZoom, setShowImageZoom] = useState(false)
+  const [zoomImageIndex, setZoomImageIndex] = useState(0)
+  const [viewStartTime, setViewStartTime] = useState<number>(Date.now())
   const hasLoaded = useRef(false)
   
   // Use cart context and auth
@@ -23,6 +32,21 @@ export default function ProductPage() {
   
   // Safely access cart methods
   const addItem = cartContext?.addItem
+
+  // Track view duration on unmount
+  useEffect(() => {
+    return () => {
+      if (product?.id && viewStartTime) {
+        const viewDuration = Math.floor((Date.now() - viewStartTime) / 1000)
+        if (viewDuration > 0) {
+          api.recommendations.trackProductView(product.id, {
+            viewDuration,
+            source: 'product_page_exit'
+          }).catch(err => console.error('Failed to track view duration:', err))
+        }
+      }
+    }
+  }, [product?.id, viewStartTime])
 
   useEffect(() => {
     // Prevent duplicate calls
@@ -53,6 +77,30 @@ export default function ProductPage() {
               const path = u.startsWith('/') ? u : `/${u}`
               return `${base}${path}`
             }
+            const normalizePdpImages = (images: any): string[] => {
+              if (!images || !Array.isArray(images)) return [toAbs(data.list_image || '')]
+              return images
+                .map((img: any) => {
+                  if (!img) return ''
+                  if (typeof img === 'string') return toAbs(img)
+                  if (typeof img === 'object' && typeof img.url === 'string') return toAbs(img.url)
+                  return ''
+                })
+                .filter((u: string) => u && u.trim().length > 0)
+            }
+
+            const normalizeBannerImages = (images: any): string[] => {
+              if (!images || !Array.isArray(images)) return []
+              return images
+                .map((img: any) => {
+                  if (!img) return ''
+                  if (typeof img === 'string') return toAbs(img)
+                  if (typeof img === 'object' && typeof img.url === 'string') return toAbs(img.url)
+                  return ''
+                })
+                .filter((u: string) => u && u.trim().length > 0)
+            }
+
             const item: Product = {
               id: data.id,
               slug: data.slug,
@@ -60,7 +108,8 @@ export default function ProductPage() {
               category: data.category,
               price: data.price,
               listImage: toAbs(data.list_image || ''),
-              pdpImages: data.pdp_images ? data.pdp_images.map((url: string) => toAbs(url)) : [toAbs(data.list_image || '')],
+              pdpImages: normalizePdpImages(data.pdp_images),
+              bannerImages: normalizeBannerImages(data.banner_images),
               description: data.description || '',
               details: data.details
             }
@@ -73,6 +122,28 @@ export default function ProductPage() {
                 category: item.category,
                 price: item.price
               })
+              
+              // Track product view for recommendations
+              api.recommendations.trackProductView(item.id, {
+                source: 'product_page',
+                viewDuration: null
+              }).catch(err => console.error('Failed to track product view:', err))
+              
+              // Update localStorage
+              try {
+                const recent = JSON.parse(localStorage.getItem('recently_viewed') || '[]')
+                const updated = [String(item.id), ...recent.filter((id: string) => id !== String(item.id))].slice(0, 20)
+                localStorage.setItem('recently_viewed', JSON.stringify(updated))
+                
+                // Dispatch custom event
+                window.dispatchEvent(new CustomEvent('product-viewed', { 
+                  detail: { productId: item.id } 
+                }))
+              } catch (err) {
+                console.error('Failed to update localStorage:', err)
+              }
+              
+              setViewStartTime(Date.now())
             }
             console.log('🖼️ Product images:', {
               listImage: item.listImage,
@@ -183,6 +254,61 @@ export default function ProductPage() {
     const apiBase = getApiBase()
     
     try {
+      // Refresh product from database
+      const res = await fetch(`${apiBase}/api/products/slug/${slug}?_=${Date.now()}`, { 
+        credentials: 'include',
+        cache: 'no-store'
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data) {
+          const toAbs = (u?: string) => {
+            if (!u || typeof u !== 'string') return ''
+            if (/^https?:\/\//i.test(u)) return u
+            const base = apiBase.replace(/\/$/, '')
+            const path = u.startsWith('/') ? u : `/${u}`
+            return `${base}${path}`
+          }
+          const normalizePdpImages = (images: any): string[] => {
+            if (!images || !Array.isArray(images)) return [toAbs(data.list_image || '')]
+            return images
+              .map((img: any) => {
+                if (!img) return ''
+                if (typeof img === 'string') return toAbs(img)
+                if (typeof img === 'object' && typeof img.url === 'string') return toAbs(img.url)
+                return ''
+              })
+              .filter((u: string) => u && u.trim().length > 0)
+          }
+
+          const normalizeBannerImages = (images: any): string[] => {
+            if (!images || !Array.isArray(images)) return []
+            return images
+              .map((img: any) => {
+                if (!img) return ''
+                if (typeof img === 'string') return toAbs(img)
+                if (typeof img === 'object' && typeof img.url === 'string') return toAbs(img.url)
+                return ''
+              })
+              .filter((u: string) => u && u.trim().length > 0)
+          }
+
+          const item: Product = {
+            id: data.id,
+            slug: data.slug,
+            title: data.title,
+            category: data.category,
+            price: data.price,
+            listImage: toAbs(data.list_image || ''),
+            pdpImages: normalizePdpImages(data.pdp_images),
+            bannerImages: normalizeBannerImages(data.banner_images),
+            description: data.description || '',
+            details: data.details
+          }
+          setProduct(item)
+        }
+      }
+
       // Refresh CSV data
       const csvRes = await fetch(`${apiBase}/api/products-csv`)
       if (csvRes.ok) {
@@ -194,16 +320,39 @@ export default function ProductPage() {
         
         if (csvMatch) {
           setCsvProduct(csvMatch)
-          setLastUpdated(new Date())
-          console.log('🔄 Data refreshed successfully')
         }
       }
+      
+      setLastUpdated(new Date())
+      console.log('🔄 Data refreshed successfully')
     } catch (error) {
       console.error('❌ Failed to refresh data:', error)
     } finally {
       setIsRefreshing(false)
     }
   }
+
+  // Listen for product updates
+  useEffect(() => {
+    const handleProductUpdate = (event: CustomEvent) => {
+      const updatedProduct = event.detail
+      if (!updatedProduct || !updatedProduct.id) return
+
+      // If the updated product matches the current product, refresh
+      if (product && product.id === updatedProduct.id) {
+        console.log('🔄 Product updated, refreshing product page:', updatedProduct)
+        refreshData()
+      }
+    }
+
+    window.addEventListener('product-updated', handleProductUpdate as EventListener)
+    window.addEventListener('refresh-products', handleProductUpdate as EventListener)
+
+    return () => {
+      window.removeEventListener('product-updated', handleProductUpdate as EventListener)
+      window.removeEventListener('refresh-products', handleProductUpdate as EventListener)
+    }
+  }, [product?.id])
 
   const derivePdpImages = (r: any, toAbs: (u?: string) => string) => {
     const images = []
@@ -263,7 +412,6 @@ export default function ProductPage() {
   ]
 
   return (
-    <AuthGuard>
     <div className="overflow-x-hidden bg-white">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white">
@@ -331,28 +479,46 @@ export default function ProductPage() {
           <div className="grid grid-cols-1 gap-6 sm:gap-8 md:gap-12 lg:grid-cols-2 mb-8 sm:mb-12 md:mb-16">
             {/* Product Media */}
             <div className="space-y-2 sm:space-y-4">
-              <div className="aspect-square overflow-hidden rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
+              {/* Banner Images Section */}
+              {product.bannerImages && product.bannerImages.length > 0 && (
+                <div className="mb-4">
+                  <div className="overflow-hidden rounded-lg border border-gray-200">
+                    {product.bannerImages.map((banner, idx) => {
+                      const isVid = /\.(mp4|webm|ogg)(\?|$)/i.test(banner)
+                      return isVid ? (
+                        <video key={idx} src={banner} className="w-full h-auto" controls autoPlay muted loop />
+                      ) : (
+                        <img key={idx} src={banner} alt={`${product.title} Banner ${idx + 1}`} className="w-full h-auto object-cover" onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }} />
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {/* Main Product Image */}
+              <div className="aspect-square overflow-hidden rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50 cursor-zoom-in group">
                 {(() => {
                   const mainImage = product.pdpImages[selectedImage] || product.listImage
+                  const allImages = product.pdpImages.length > 0 ? product.pdpImages : [product.listImage].filter(Boolean)
                   console.log('🖼️ Displaying main image:', mainImage)
+                  
                   return mainImage ? (
-                    <img 
-                      src={mainImage} 
-                      alt={product.title} 
-                      className="h-full w-full object-cover" 
+                    <img
+                      src={mainImage}
+                      alt={product.title}
+                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                      onClick={() => {
+                        setZoomImageIndex(selectedImage)
+                        setShowImageZoom(true)
+                      }}
                       onError={(e) => {
                         console.log('❌ Image failed to load:', mainImage)
                         e.currentTarget.style.display = 'none'
                       }}
                     />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-gray-400">
-                      <svg className="w-16 h-16 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-sm">No image available</span>
-                    </div>
-                  )
+                  ) : null
                 })()}
               </div>
               {product.pdpImages.length > 1 && (
@@ -360,11 +526,15 @@ export default function ProductPage() {
                   {product.pdpImages.slice(0, 5).map((src, index) => (
                     <button
                       key={index}
-                      onClick={() => setSelectedImage(index)}
-                      className={`relative aspect-square overflow-hidden rounded-lg border-2 ${
+                      onClick={() => {
+                        setSelectedImage(index)
+                        setZoomImageIndex(index)
+                        setShowImageZoom(true)
+                      }}
+                      className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all cursor-zoom-in ${
                         selectedImage === index 
-                          ? 'border-gray-900' 
-                          : 'border-gray-200'
+                          ? 'border-gray-900 ring-2 ring-gray-300' 
+                          : 'border-gray-200 hover:border-gray-400'
                       }`}
                     >
                         <img 
@@ -450,7 +620,7 @@ export default function ProductPage() {
                     ) : null
                   })()}
                 </div>
-                <div className="text-sm text-gray-600">Inclusive of all taxes</div>
+                <div className="text-sm text-gray-600">Inclusive of all GST</div>
                 
                 {/* Net Volume */}
                 {csvProduct?.['Net Quantity (Content)'] && (
@@ -559,6 +729,15 @@ export default function ProductPage() {
                   >
                     BUY NOW
                   </button>
+              </div>
+
+              {/* Share Product */}
+              <div className="flex items-center gap-2">
+                <ShareProduct 
+                  productSlug={product.slug}
+                  productTitle={product.title}
+                  productImage={product.listImage}
+                />
               </div>
 
               {/* Loyalty Points */}
@@ -1131,6 +1310,26 @@ export default function ProductPage() {
         </div>
       </section>
 
+          {/* Related Products Carousel */}
+          {product.id && (
+            <>
+              <RelatedProductsCarousel 
+                productId={product.id}
+                type="related"
+                title="Complete the Routine"
+              />
+              
+              <RelatedProductsCarousel 
+                productId={product.id}
+                type="recommended"
+                title="You May Also Like"
+              />
+            </>
+          )}
+
+          {/* Recently Viewed Products */}
+          <RecentlyViewed limit={8} />
+
           {/* FAQ Section */}
           <section className="border-t border-gray-200 pt-12 mb-16">
             <h2 className="text-2xl font-bold text-gray-900 text-center mb-8">NEED HELP? FREQUENTLY ASKED QUESTIONS</h2>
@@ -1157,8 +1356,34 @@ export default function ProductPage() {
           </section>
         </div>
       </main>
+
+      {/* Sticky Add to Cart */}
+      {product && (
+        <StickyAddToCart 
+          product={{
+            id: product.id,
+            title: product.title,
+            price: product.price,
+            slug: product.slug,
+            listImage: product.listImage
+          }}
+          quantity={quantity}
+        />
+      )}
+
+      {/* Image Zoom Lightbox */}
+      {showImageZoom && product && (
+        <ImageZoom
+          images={product.pdpImages.length > 0 ? product.pdpImages : [product.listImage].filter(Boolean)}
+          currentIndex={zoomImageIndex}
+          onClose={() => setShowImageZoom(false)}
+          onIndexChange={(index) => {
+            setZoomImageIndex(index)
+            setSelectedImage(index)
+          }}
+        />
+      )}
     </div>
-    </AuthGuard>
   )
 }
 

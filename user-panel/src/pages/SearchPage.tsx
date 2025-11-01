@@ -16,8 +16,9 @@ interface SearchResult {
   skin_type: string
   hair_type: string
   list_image: string
-  pdp_images: Array<{ url: string }>
+  pdp_images?: Array<{ url: string }>
   relevance_score: number
+  slug?: string
   details?: {
     mrp?: string
     websitePrice?: string
@@ -111,6 +112,60 @@ export default function SearchPage() {
   }, [])
 
   // Perform search
+  const normalizeProduct = (product: any): SearchResult => {
+    let details: any = product.details
+    if (typeof details === 'string') {
+      try {
+        details = JSON.parse(details)
+      } catch (err) {
+        details = {}
+      }
+    }
+
+    const apiImages = Array.isArray(product.pdp_images)
+      ? product.pdp_images
+      : []
+
+    const extraImages: Array<{ url: string }> = []
+    for (let idx = 1; idx <= 6; idx++) {
+      const key = `pdp_image_${idx}`
+      if (product[key]) {
+        extraImages.push({ url: product[key] })
+      }
+    }
+
+    const combinedImages = [...apiImages, ...extraImages]
+      .filter((img: any) => img && (img.url || typeof img === 'string'))
+      .map((img: any) => (typeof img === 'string' ? { url: img } : img))
+
+    const candidatePaths: (string | undefined)[] = [
+      product.list_image,
+      ...(combinedImages.map((img: { url: string }) => img.url)),
+      product.listImage,
+      product.thumbnail,
+      product.primary_image
+    ]
+
+    const listImage = candidatePaths.find((path) => path && path.trim().length > 0) || ''
+
+    return {
+      id: product.id?.toString?.() || product.id,
+      title: product.title,
+      description: product.description,
+      price: product.price,
+      category: product.category,
+      brand: product.brand,
+      key_ingredients: product.key_ingredients,
+      skin_type: product.skin_type,
+      hair_type: product.hair_type,
+      list_image: listImage,
+      pdp_images: combinedImages,
+      relevance_score: product.relevance_score ?? 0,
+      slug: product.slug,
+      details
+    }
+  }
+
   const performSearch = async (query: string, page: number = 1) => {
     setLoading(true)
     setError(null)
@@ -149,8 +204,10 @@ export default function SearchPage() {
       }
 
       const data: SearchResponse = await response.json()
+
+      const normalizedProducts = (data.products || []).map(normalizeProduct)
       
-      setSearchResults(data.products)
+      setSearchResults(normalizedProducts)
       setSuggestions(data.suggestions)
       setPopularSearches(data.popularSearches)
       setCurrentPage(data.pagination.page)
@@ -260,15 +317,57 @@ export default function SearchPage() {
     }
   }
 
+  const toAbsoluteUrl = (path?: string) => {
+    if (!path) return ''
+    if (path.startsWith('http')) return path
+    if (path.startsWith('/IMAGES/')) return path
+    const normalized = path.startsWith('/') ? path : `/${path}`
+    return `${getApiBase()}${normalized}`
+  }
+
+  const resolveImageUrl = (product: SearchResult) => {
+    const candidatePaths: (string | undefined)[] = [
+      product.list_image,
+      ...(Array.isArray(product.pdp_images) ? product.pdp_images.map((img) => img?.url) : []),
+      (product as any).listImage,
+      (product as any).thumbnail,
+      (product as any).primary_image,
+      (product as any).pdp_image_1,
+      (product as any).pdp_image_2,
+      (product as any).pdp_image_3,
+      (product as any).pdp_image_4,
+      (product as any).pdp_image_5,
+      (product as any).pdp_image_6
+    ]
+
+    const candidate = candidatePaths.find((path) => path && path.trim().length > 0) || ''
+    const resolved = toAbsoluteUrl(candidate)
+    return resolved
+  }
+
   // Handle add to cart
   const handleAddToCart = (product: SearchResult) => {
+    const primaryImage = resolveImageUrl(product)
+    const gallery = [
+      primaryImage,
+      ...(Array.isArray(product.pdp_images)
+        ? product.pdp_images.map((img) => toAbsoluteUrl(img.url))
+        : []),
+      (product as any).pdp_image_1 && toAbsoluteUrl((product as any).pdp_image_1),
+      (product as any).pdp_image_2 && toAbsoluteUrl((product as any).pdp_image_2),
+      (product as any).pdp_image_3 && toAbsoluteUrl((product as any).pdp_image_3),
+      (product as any).pdp_image_4 && toAbsoluteUrl((product as any).pdp_image_4),
+      (product as any).pdp_image_5 && toAbsoluteUrl((product as any).pdp_image_5),
+      (product as any).pdp_image_6 && toAbsoluteUrl((product as any).pdp_image_6)
+    ].filter((value, index, self): value is string => !!value && self.indexOf(value) === index)
+
     addItem({
       id: parseInt(product.id) || undefined,
-      slug: product.title.toLowerCase().replace(/\s+/g, '-'),
+      slug: product.slug || product.title.toLowerCase().replace(/\s+/g, '-'),
       title: product.title,
       price: product.price,
-      listImage: product.list_image,
-      pdpImages: [],
+      listImage: primaryImage,
+      pdpImages: gallery,
       category: product.category,
       description: product.description
     }, 1)
@@ -535,9 +634,14 @@ export default function SearchPage() {
               <div key={product.id} className="group bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden">
                 <div className="relative">
                   <img
-                    src={product.list_image || product.pdp_images[0]?.url || '/IMAGES/FACE SERUM (5).jpg'}
+                    src={resolveImageUrl(product) || ''}
                     alt={product.title}
                     className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      target.style.display = 'none'
+                    }}
                   />
                   <button
                     onClick={() => handleWishlistToggle(product)}

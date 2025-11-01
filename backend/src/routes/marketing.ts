@@ -616,8 +616,13 @@ export const createWhatsAppAutomation = async (pool: Pool, req: Request, res: Re
 export const getLiveChatSessions = async (pool: Pool, req: Request, res: Response) => {
   try {
     const { rows } = await pool.query(`
-      SELECT * FROM live_chat_sessions
-      ORDER BY created_at DESC
+      SELECT 
+        s.*,
+        COALESCE(NULLIF(s.customer_name, ''), NULLIF(u.name, ''), 'User') as customer_name,
+        COALESCE(NULLIF(s.customer_email, ''), NULLIF(u.email, ''), '') as customer_email
+      FROM live_chat_sessions s
+      LEFT JOIN users u ON s.user_id::text = u.id::text
+      ORDER BY s.last_message_time DESC NULLS LAST, s.created_at DESC
     `)
     sendSuccess(res, rows)
   } catch (err) {

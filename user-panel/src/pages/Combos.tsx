@@ -93,7 +93,10 @@ export default function Combos() {
               <div key={product.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow group cursor-pointer flex flex-col" onClick={() => window.location.hash = `#/user/product/${product.slug}`}>
                 <div className="relative">
                   <img 
-                    src={product.list_image || '/IMAGES/default-product.jpg'} 
+                    src={product.list_image}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }} 
                     alt={product.title}
                     className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
                   />

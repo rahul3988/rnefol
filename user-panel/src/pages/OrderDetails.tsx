@@ -269,14 +269,10 @@ export default function OrderDetails() {
                         onError={(e) => {
                           // Fallback to default image on error
                           const target = e.target as HTMLImageElement
-                          target.src = '/IMAGES/default-product.jpg'
+                          e.currentTarget.style.display = 'none'
                         }}
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Package className="w-12 h-12 text-slate-400" />
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-lg">
@@ -347,7 +343,7 @@ export default function OrderDetails() {
                 <span>₹{order.shipping.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                <span>Tax</span>
+                <span>GST</span>
                 <span>₹{order.tax.toLocaleString()}</span>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-3">
@@ -427,7 +423,7 @@ export default function OrderDetails() {
                   ? imageUrl 
                   : imageUrl 
                     ? `http://192.168.1.66:4000${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`
-                    : '/IMAGES/default-product.jpg'
+                    : ''
 
                 return (
                   <div
@@ -435,17 +431,18 @@ export default function OrderDetails() {
                     onClick={() => window.location.hash = `#/user/product/${product.slug || product.id}`}
                     className="bg-white dark:bg-slate-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer overflow-hidden group"
                   >
-                    <div className="aspect-square overflow-hidden bg-slate-100 dark:bg-slate-700">
-                      <img
-                        src={fullImageUrl}
-                        alt={product.title || product.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement
-                          target.src = '/IMAGES/default-product.jpg'
-                        }}
-                      />
-                    </div>
+                    {fullImageUrl && (
+                      <div className="aspect-square overflow-hidden bg-slate-100 dark:bg-slate-700">
+                        <img
+                          src={fullImageUrl}
+                          alt={product.title || product.name}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="p-4">
                       <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                         {product.title || product.name}

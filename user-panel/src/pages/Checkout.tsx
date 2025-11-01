@@ -117,13 +117,31 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
       : items
     
     // Enrich with CSV data if available
-    return baseItems.map((item: any) => {
+    const enrichedItems = baseItems.map((item: any) => {
       const csvProduct = csvProducts[item.slug]
+      
+      // Debug: Log item details for MRP checking
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🔍 Item: ${item.title}`, {
+          mrp: item.mrp,
+          details: item.details,
+          price: item.price,
+          csvProduct: csvProduct ? {
+            'MRP (₹)': csvProduct['MRP (₹)'],
+            'MRP ': csvProduct['MRP '],
+            'MRP': csvProduct['MRP'],
+            'mrp': csvProduct['mrp']
+          } : null
+        })
+      }
+      
       return {
         ...item,
         csvProduct: csvProduct || null
       }
     })
+    
+    return enrichedItems
   }, [buySlug, items, csvProducts])
 
   const fetchPaymentMethods = async () => {
@@ -147,11 +165,14 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
       })
       
       if (response.ok) {
-        const discount = await response.json()
+        const responseData = await response.json()
+        const discount = responseData.data || responseData // Handle both { data: ... } and direct response
         setAppliedDiscount(discount)
         setError(null)
       } else {
-        setError('Invalid discount code')
+        const errorData = await response.json().catch(() => ({ message: 'Invalid discount code' }))
+        setError(errorData.message || 'Invalid discount code')
+        setAppliedDiscount(null)
       }
     } catch (error) {
       setError('Failed to apply discount code')
@@ -165,8 +186,18 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
 
   const calculateDiscountAmount = () => {
     if (!appliedDiscount) return 0
+    // Use discountAmount from API response if available (already calculated)
+    if (appliedDiscount.discountAmount !== undefined) {
+      return appliedDiscount.discountAmount
+    }
+    // Fallback to calculating locally
     if (appliedDiscount.type === 'percentage') {
-      return (calcSubtotal * appliedDiscount.value) / 100
+      let discount = (calcSubtotal * appliedDiscount.value) / 100
+      // Apply max discount if set
+      if (appliedDiscount.maxDiscount && discount > appliedDiscount.maxDiscount) {
+        discount = appliedDiscount.maxDiscount
+      }
+      return discount
     }
     return appliedDiscount.value
   }
@@ -178,25 +209,104 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
 
   const shipping = 0
   
-  // Calculate tax based on categories
+  // Calculate tax from MRP (tax-inclusive pricing)
+  // Extract tax from price instead of adding it
   const calculateTax = () => {
     if (buySlug) {
       // For single item checkout
       const item = orderItems[0]
       if (!item) return 0
-      const itemSubtotal = parsePrice(item.price) * (item.quantity || 1)
+      const itemPrice = parsePrice(item.price) // MRP which includes tax
       const category = (item.category || '').toLowerCase()
       const taxRate = category.includes('hair') ? 0.05 : 0.18
-      return itemSubtotal * taxRate
+      
+      // Extract tax from tax-inclusive MRP
+      // basePrice = taxInclusivePrice / (1 + taxRate)
+      // tax = taxInclusivePrice - basePrice
+      const basePrice = itemPrice / (1 + taxRate)
+      const itemTax = itemPrice - basePrice
+      
+      return itemTax * (item.quantity || 1)
     }
     return tax
   }
   
+  // Calculate MRP total and product discount
+  const calculateMrpTotal = () => {
+    return orderItems.reduce((total, item: any) => {
+      // Priority order for MRP:
+      // 1. Cart item mrp field (from backend product details)
+      // 2. CSV product MRP (check all possible column name variations)
+      // 3. Don't fallback to item.price as that's the discounted price
+      let itemMrp = null
+      
+      if (item.mrp) {
+        itemMrp = item.mrp
+      } else if (item.details?.mrp) {
+        itemMrp = item.details.mrp
+      } else if (item.product?.details?.mrp) {
+        itemMrp = item.product.details.mrp
+      } else if (item.csvProduct) {
+        // Check CSV product for MRP in various column name formats
+        const csvProduct = item.csvProduct
+        itemMrp = csvProduct['MRP (₹)'] || csvProduct['MRP '] || csvProduct['MRP'] || 
+                  csvProduct['mrp'] || csvProduct['MRP(₹)'] || csvProduct['MRP(₹) ']
+      }
+      
+      // Only use item.price as absolute last resort if no MRP found anywhere
+      if (!itemMrp) {
+        console.warn(`⚠️ MRP not found for item: ${item.title || item.slug}, using price as fallback`)
+        itemMrp = item.price
+      }
+      
+      const mrp = parsePrice(itemMrp || '0')
+      if (mrp === 0) {
+        console.warn(`⚠️ MRP is 0 for item: ${item.title || item.slug}`)
+      }
+      return total + (mrp * (item.quantity || 1))
+    }, 0)
+  }
+
+  const calculateProductDiscount = () => {
+    return orderItems.reduce((total, item: any) => {
+      // Use same priority order for MRP
+      let itemMrp = null
+      
+      if (item.mrp) {
+        itemMrp = item.mrp
+      } else if (item.details?.mrp) {
+        itemMrp = item.details.mrp
+      } else if (item.product?.details?.mrp) {
+        itemMrp = item.product.details.mrp
+      } else if (item.csvProduct) {
+        const csvProduct = item.csvProduct
+        itemMrp = csvProduct['MRP (₹)'] || csvProduct['MRP '] || csvProduct['MRP'] || 
+                  csvProduct['mrp'] || csvProduct['MRP(₹)'] || csvProduct['MRP(₹) ']
+      }
+      
+      if (!itemMrp) {
+        itemMrp = item.price // Fallback only if no MRP found
+      }
+      
+      const mrp = parsePrice(itemMrp || '0')
+      const currentPrice = parsePrice(item.price) // This is websitePrice (after product discount)
+      const productDiscount = (mrp - currentPrice) * (item.quantity || 1)
+      return total + Math.max(0, productDiscount)
+    }, 0)
+  }
+
   const calculatedTax = calculateTax()
-  const finalTotal = buySlug ? calcSubtotal + shipping + calculatedTax : total
+  const discountAmount = calculateDiscountAmount() // Coupon code discount
+  const mrpTotal = calculateMrpTotal()
+  const productDiscount = calculateProductDiscount()
+  const finalSubtotal = calcSubtotal - discountAmount
+  // Grand Total = Subtotal (already includes tax) - coupon discount + shipping
+  const grandTotal = buySlug 
+    ? Math.max(0, finalSubtotal + shipping) 
+    : Math.max(0, (subtotal - discountAmount) + shipping)
 
   // Payment rules: <1000 prepaid/postpaid, >1000 prepaid only
-  const canUsePostpaid = finalTotal < 1000
+  const canUsePostpaid = grandTotal < 1000
   const isCOD = selectedPayment === 'cod'
 
   useEffect(() => {
@@ -250,6 +360,7 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
       const orderNumber = `NEFOL-${Date.now()}`
       const enrichedItems = enrichOrderItems()
       
+      const discountAmount = calculateDiscountAmount()
       const orderData = {
         order_number: orderNumber,
         customer_name: name,
@@ -265,11 +376,13 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
         subtotal: Number(calcSubtotal.toFixed(2)),
         shipping,
         tax: calculatedTax,
-        total: Number(finalTotal.toFixed(2)),
+        total: Number(grandTotal.toFixed(2)),
         payment_method: 'razorpay',
         payment_type: paymentType,
         status: 'created',
-        affiliate_id: affiliateId
+        affiliate_id: affiliateId,
+        discount_code: appliedDiscount?.code || null,
+        discount_amount: discountAmount > 0 ? Number(discountAmount.toFixed(2)) : 0
       }
 
       // Create order in backend first
@@ -277,7 +390,7 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
 
       // Create Razorpay order
       const razorpayOrder = await api.payment.createRazorpayOrder({
-        amount: Number(finalTotal.toFixed(2)),
+        amount: Math.round(grandTotal * 100), // Razorpay expects amount in paise
         currency: 'INR',
         order_number: orderNumber,
         customer_name: name,
@@ -350,6 +463,7 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
       }
       
       const enrichedItems = enrichOrderItems()
+      const discountAmount = calculateDiscountAmount()
       
       const orderData = {
         order_number: orderNumber,
@@ -366,11 +480,13 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
         subtotal: Number(calcSubtotal.toFixed(2)),
         shipping,
         tax: calculatedTax,
-        total: Number(finalTotal.toFixed(2)),
+        total: Number(grandTotal.toFixed(2)),
         payment_method: selectedPayment,
         payment_type: isCOD ? 'cod' : paymentType,
         status: 'created',
-        affiliate_id: affiliateId
+        affiliate_id: affiliateId,
+        discount_code: appliedDiscount?.code || null,
+        discount_amount: discountAmount > 0 ? Number(discountAmount.toFixed(2)) : 0
       }
       
       const data = await api.orders.createOrder(orderData)
@@ -415,6 +531,50 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
               <input className="rounded border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="State" value={state} onChange={e=>setState(e.target.value)} required />
               <input className="rounded border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="ZIP" value={zip} onChange={e=>setZip(e.target.value)} required />
             </div>
+          </div>
+
+          {/* Coupon Code Section */}
+          <div>
+            <h2 className="text-xl font-bold dark:text-slate-100 mb-4">Coupon Code</h2>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="flex-1 rounded border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600"
+                placeholder="Enter coupon code"
+                value={discountCode}
+                onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                disabled={!!appliedDiscount}
+              />
+              {!appliedDiscount ? (
+                <button
+                  type="button"
+                  onClick={applyDiscountCode}
+                  className="rounded bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  disabled={!discountCode.trim()}
+                >
+                  Apply
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppliedDiscount(null)
+                    setDiscountCode('')
+                    setError(null)
+                  }}
+                  className="rounded bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {appliedDiscount && (
+              <div className="mt-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  ✅ Coupon applied: {appliedDiscount.code} - Save ₹{discountAmount.toFixed(2)}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Payment Method Selection */}
@@ -499,8 +659,8 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
             className="w-full rounded bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             {loading ? 'Processing Order...' : 
-             isCOD ? `Place Order (COD) - ₹${finalTotal.toFixed(2)}` : 
-             `Pay ₹${finalTotal.toFixed(2)} with ${paymentMethods.find(m => m.id === selectedPayment)?.name}`}
+             isCOD ? `Place Order (COD) - ₹${grandTotal.toFixed(2)}` : 
+             `Pay ₹${grandTotal.toFixed(2)} with ${paymentMethods.find(m => m.id === selectedPayment)?.name}`}
           </button>
         </form>
         <aside>
@@ -521,11 +681,61 @@ export default function Checkout({ affiliateId }: CheckoutProps) {
                 <span className="dark:text-slate-100">₹{(parsePrice(i.price) * i.quantity).toFixed(2)}</span>
               </div>
             ))}
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-3 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">Subtotal</span><span className="dark:text-slate-100">₹{calcSubtotal.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">Shipping</span><span className="dark:text-slate-100">₹{shipping.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">GST ({buySlug ? (orderItems[0]?.category?.toLowerCase().includes('hair') ? '5%' : '18%') : 'Mixed'})</span><span className="dark:text-slate-100">₹{calculatedTax.toFixed(2)}</span></div>
-              <div className="flex justify-between font-semibold"><span className="dark:text-slate-100">Total</span><span className="dark:text-slate-100">₹{finalTotal.toFixed(2)}</span></div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3 text-sm space-y-2">
+              {/* MRP Total */}
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">MRP</span>
+                <span className="dark:text-slate-100">₹{mrpTotal.toFixed(2)}</span>
+              </div>
+              
+              {/* Product Discount */}
+              {productDiscount > 0 && (
+                <div className="flex justify-between text-green-600 dark:text-green-400">
+                  <span>Product Discount</span>
+                  <span>-₹{productDiscount.toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* Subtotal */}
+              <div className="flex justify-between font-medium">
+                <span className="text-slate-700 dark:text-slate-300">Subtotal</span>
+                <span className="dark:text-slate-100">₹{calcSubtotal.toFixed(2)}</span>
+              </div>
+              
+              {/* Coupon Code Discount */}
+              {appliedDiscount && discountAmount > 0 && (
+                <div className="flex justify-between text-green-600 dark:text-green-400">
+                  <span>Coupon Code ({appliedDiscount.code})</span>
+                  <span>-₹{discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* Shipping */}
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Shipping Charges</span>
+                <span className={shipping > 0 ? 'dark:text-slate-100' : 'text-green-600 dark:text-green-400'}>
+                  {shipping > 0 ? `₹${shipping.toFixed(2)}` : 'Free'}
+                </span>
+              </div>
+              
+              {/* GST */}
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">
+                  GST ({buySlug ? (orderItems[0]?.category?.toLowerCase().includes('hair') ? '5%' : '18%') : 'Mixed'}) 
+                  <span className="text-xs ml-1">(Inclusive)</span>
+                </span>
+                <span className="dark:text-slate-100">₹{calculatedTax.toFixed(2)}</span>
+              </div>
+              
+              {/* Grand Total */}
+              <div className="border-t border-slate-300 dark:border-slate-600 pt-2 mt-2">
+                <div className="flex justify-between text-lg font-bold">
+                  <span className="dark:text-slate-100">Grand Total</span>
+                  <span className="dark:text-slate-100">₹{grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+              
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">* MRP includes GST</div>
             </div>
           </div>
         </aside>

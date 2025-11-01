@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700;800;900&family=Montserrat:wght@100;200;300;400;500;600;700;800;900&family=Poppins:wght@100;200;300;400;500;600;700;800;900&family=Outfit:wght@100;200;300;400;500;600;700;800;900&family=DM+Sans:wght@100;200;300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
+/* Natura Bissé Style Fonts - Luxury Beauty Brand Typography */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&family=Lato:wght@100;300;400;700;900&family=Montserrat:wght@100;200;300;400;500;600;700;800;900&family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&family=Poppins:wght@100;200;300;400;500;600;700;800;900&family=Outfit:wght@100;200;300;400;500;600;700;800;900&family=DM+Sans:wght@100;200;300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -115,14 +116,15 @@
   }
   
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-weight: 400;
+    font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 300;
     line-height: 1.6;
     color: #1f2937;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     background-attachment: fixed;
     min-height: 100vh;
     overflow-x: hidden;
+    letter-spacing: 0.01em;
   }
   
   [data-theme="dark"] body {
@@ -130,104 +132,101 @@
     background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
   }
   
-  /* Ultra Aesthetic Typography System */
+  /* Natura Bissé Style Typography System - Luxury Beauty Brand */
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Playfair Display', serif;
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    background: var(--gradient-aurora);
-    background-size: 400% 400%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: aurora 8s ease-in-out infinite;
-    text-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
+    font-family: 'Cormorant Garamond', 'Playfair Display', serif;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: inherit;
+    text-shadow: none;
     position: relative;
+    font-style: normal;
   }
   
   h1 {
-    font-size: clamp(3rem, 8vw, 8rem);
-    font-weight: 900;
-    letter-spacing: -0.03em;
-    text-shadow: 0 0 50px rgba(99, 102, 241, 0.5);
+    font-size: clamp(2.5rem, 7vw, 6rem);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
   }
   
   h2 {
-    font-size: clamp(2rem, 6vw, 6rem);
-    font-weight: 800;
-    letter-spacing: -0.025em;
-    text-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+    font-size: clamp(2rem, 5vw, 4rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
   }
   
   h3 {
-    font-size: clamp(1.5rem, 4vw, 3rem);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    text-shadow: 0 0 30px rgba(6, 182, 212, 0.3);
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.2;
   }
   
-  /* Ultra Aesthetic Body Text */
+  /* Natura Bissé Style Body Text */
   body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-weight: 400;
-    line-height: 1.7;
-    color: #ffffff;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    background-attachment: fixed;
-    min-height: 100vh;
-    overflow-x: hidden;
+    font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 300;
+    line-height: 1.6;
+    color: #1f2937;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    letter-spacing: 0.01em;
   }
   
   p {
-    font-family: 'DM Sans', sans-serif;
-    font-weight: 400;
-    line-height: 1.8;
-    color: rgba(255, 255, 255, 0.9);
-    font-size: clamp(1rem, 2vw, 1.25rem);
+    font-family: 'Lato', 'Inter', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    color: inherit;
+    font-size: clamp(1rem, 1.5vw, 1.125rem);
+    letter-spacing: 0.01em;
   }
   
-  /* Ultra Aesthetic Button Text */
+  /* Natura Bissé Style Button Text */
   button {
-    font-family: 'Outfit', sans-serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-family: 'Montserrat', 'Inter', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    font-size: 0.9rem;
+    font-size: 0.75rem;
   }
   
-  /* Ultra Aesthetic Navigation Text */
+  /* Natura Bissé Style Navigation Text */
   nav a {
-    font-family: 'Manrope', sans-serif;
+    font-family: 'Montserrat', 'Inter', sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+  }
+  
+  /* Natura Bissé Style Product Text */
+  .product-title {
+    font-family: 'Cormorant Garamond', serif;
     font-weight: 500;
     letter-spacing: 0.01em;
-    font-size: 1.1rem;
-  }
-  
-  /* Ultra Aesthetic Product Text */
-  .product-title {
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    letter-spacing: -0.01em;
     font-size: 1.25rem;
+    line-height: 1.3;
   }
   
   .product-description {
-    font-family: 'Poppins', sans-serif;
-    font-weight: 400;
+    font-family: 'Lato', sans-serif;
+    font-weight: 300;
     line-height: 1.6;
-    font-size: 0.95rem;
+    font-size: 0.9375rem;
+    letter-spacing: 0.01em;
   }
   
-  /* Ultra Aesthetic Price Text */
+  /* Natura Bissé Style Price Text */
   .price-text {
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    font-size: 1.5rem;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    font-size: 1.25rem;
   }
   
   /* Code Elements */
@@ -945,45 +944,66 @@
     animation: gradient 15s ease infinite;
   }
   
-  /* Ultra Aesthetic Typography Classes */
+  /* Natura Bissé Style Typography Classes */
   .font-display {
-    font-family: 'Playfair Display', serif;
-    font-weight: 700;
-    letter-spacing: -0.025em;
+    font-family: 'Cormorant Garamond', 'Playfair Display', serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
   
   .font-body {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-weight: 400;
+    font-family: 'Lato', 'Inter', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.01em;
   }
   
   .font-product {
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 600;
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 500;
+    letter-spacing: 0.01em;
   }
   
   .font-button {
-    font-family: 'Outfit', sans-serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-family: 'Montserrat', 'Inter', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
   }
   
   .font-nav {
-    font-family: 'Manrope', sans-serif;
-    font-weight: 500;
+    font-family: 'Montserrat', 'Inter', sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
   }
   
   .font-description {
-    font-family: 'Poppins', sans-serif;
-    font-weight: 400;
+    font-family: 'Lato', sans-serif;
+    font-weight: 300;
     line-height: 1.6;
+    letter-spacing: 0.01em;
   }
   
   .font-price {
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  
+  /* Natura Bissé Style Serif Headings */
+  .font-serif-natura {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  
+  /* Natura Bissé Style Body */
+  .font-sans-natura {
+    font-family: 'Lato', 'Inter', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.01em;
+    line-height: 1.6;
   }
   
   .font-mono {
@@ -1183,4 +1203,166 @@
 .landscape-video {
   object-fit: cover;
   object-position: center;
+}
+
+/* ===== NATURA BISSÉ STYLE ANIMATIONS ===== */
+
+/* Fade In Up Animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s ease-out forwards;
+}
+
+/* Fade In Down Animation */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.8s ease-out forwards;
+}
+
+/* Fade In Left Animation */
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in-left {
+  animation: fadeInLeft 0.8s ease-out forwards;
+}
+
+/* Fade In Right Animation */
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in-right {
+  animation: fadeInRight 0.8s ease-out forwards;
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+/* Zoom In Animation */
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-zoom-in {
+  animation: zoomIn 0.8s ease-out forwards;
+}
+
+/* Staggered Animation Delays */
+.animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animation-delay-400 {
+  animation-delay: 400ms;
+}
+
+.animation-delay-500 {
+  animation-delay: 500ms;
+}
+
+/* Parallax Container */
+.parallax-container {
+  overflow: hidden;
+  position: relative;
+}
+
+.parallax-element {
+  will-change: transform;
+  transition: transform 0.1s ease-out;
+}
+
+/* Smooth Scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Count Up Animation */
+.count-up {
+  font-variant-numeric: tabular-nums;
+  transition: all 0.3s ease;
+}
+
+/* Crossfade Transition for Sliders */
+.crossfade-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.crossfade-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 800ms ease-in-out, transform 800ms ease-in-out;
+}
+
+.crossfade-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.crossfade-exit-active {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 800ms ease-in-out, transform 800ms ease-in-out;
 }

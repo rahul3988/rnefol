@@ -12,12 +12,19 @@ export async function getProducts(pool: Pool, res: Response) {
       SELECT p.*, 
              COALESCE(
                json_agg(
-                 json_build_object('url', pi.url)
-               ) FILTER (WHERE pi.url IS NOT NULL), 
+                 json_build_object('url', pi.url, 'type', COALESCE(pi.type, 'pdp'))
+               ) FILTER (WHERE pi.url IS NOT NULL AND (pi.type = 'pdp' OR pi.type IS NULL)), 
                '[]'::json
-             ) as pdp_images
+             ) as pdp_images,
+             COALESCE(
+               json_agg(
+                 json_build_object('url', pi_banner.url, 'type', 'banner')
+               ) FILTER (WHERE pi_banner.url IS NOT NULL AND pi_banner.type = 'banner'), 
+               '[]'::json
+             ) as banner_images
       FROM products p
-      LEFT JOIN product_images pi ON p.id = pi.product_id
+      LEFT JOIN product_images pi ON p.id = pi.product_id AND (pi.type = 'pdp' OR pi.type IS NULL)
+      LEFT JOIN product_images pi_banner ON p.id = pi_banner.product_id AND pi_banner.type = 'banner'
       GROUP BY p.id
       ORDER BY p.created_at DESC
     `)
@@ -27,7 +34,8 @@ export async function getProducts(pool: Pool, res: Response) {
     // Transform the data to match expected format
     const products = rows.map((product: any) => ({
       ...product,
-      pdp_images: product.pdp_images.filter((img: any) => img.url)
+      pdp_images: product.pdp_images.filter((img: any) => img.url).map((img: any) => img.url),
+      banner_images: product.banner_images.filter((img: any) => img.url).map((img: any) => img.url)
     }))
     
     sendSuccess(res, products)
@@ -46,12 +54,19 @@ export async function getProductById(pool: Pool, req: Request, res: Response) {
       SELECT p.*, 
              COALESCE(
                json_agg(
-                 json_build_object('url', pi.url)
-               ) FILTER (WHERE pi.url IS NOT NULL), 
+                 json_build_object('url', pi.url, 'type', COALESCE(pi.type, 'pdp'))
+               ) FILTER (WHERE pi.url IS NOT NULL AND (pi.type = 'pdp' OR pi.type IS NULL)), 
                '[]'::json
-             ) as pdp_images
+             ) as pdp_images,
+             COALESCE(
+               json_agg(
+                 json_build_object('url', pi_banner.url, 'type', 'banner')
+               ) FILTER (WHERE pi_banner.url IS NOT NULL AND pi_banner.type = 'banner'), 
+               '[]'::json
+             ) as banner_images
       FROM products p
-      LEFT JOIN product_images pi ON p.id = pi.product_id
+      LEFT JOIN product_images pi ON p.id = pi.product_id AND (pi.type = 'pdp' OR pi.type IS NULL)
+      LEFT JOIN product_images pi_banner ON p.id = pi_banner.product_id AND pi_banner.type = 'banner'
       WHERE p.id = $1
       GROUP BY p.id
     `, [id])
@@ -62,7 +77,8 @@ export async function getProductById(pool: Pool, req: Request, res: Response) {
     
     const product = {
       ...rows[0],
-      pdp_images: rows[0].pdp_images.filter((img: any) => img.url)
+      pdp_images: rows[0].pdp_images.filter((img: any) => img.url).map((img: any) => img.url),
+      banner_images: rows[0].banner_images.filter((img: any) => img.url).map((img: any) => img.url)
     }
     
     sendSuccess(res, product)
@@ -80,12 +96,19 @@ export async function getProductBySlug(pool: Pool, req: Request, res: Response) 
       SELECT p.*, 
              COALESCE(
                json_agg(
-                 json_build_object('url', pi.url)
-               ) FILTER (WHERE pi.url IS NOT NULL), 
+                 json_build_object('url', pi.url, 'type', COALESCE(pi.type, 'pdp'))
+               ) FILTER (WHERE pi.url IS NOT NULL AND (pi.type = 'pdp' OR pi.type IS NULL)), 
                '[]'::json
-             ) as pdp_images
+             ) as pdp_images,
+             COALESCE(
+               json_agg(
+                 json_build_object('url', pi_banner.url, 'type', 'banner')
+               ) FILTER (WHERE pi_banner.url IS NOT NULL AND pi_banner.type = 'banner'), 
+               '[]'::json
+             ) as banner_images
       FROM products p
-      LEFT JOIN product_images pi ON p.id = pi.product_id
+      LEFT JOIN product_images pi ON p.id = pi.product_id AND (pi.type = 'pdp' OR pi.type IS NULL)
+      LEFT JOIN product_images pi_banner ON p.id = pi_banner.product_id AND pi_banner.type = 'banner'
       WHERE p.slug = $1
       GROUP BY p.id
     `, [slug])
@@ -96,7 +119,8 @@ export async function getProductBySlug(pool: Pool, req: Request, res: Response) 
     
     const product = {
       ...rows[0],
-      pdp_images: rows[0].pdp_images.filter((img: any) => img.url)
+      pdp_images: rows[0].pdp_images.filter((img: any) => img.url).map((img: any) => img.url),
+      banner_images: rows[0].banner_images.filter((img: any) => img.url).map((img: any) => img.url)
     }
     
     sendSuccess(res, product)
@@ -138,7 +162,7 @@ export async function createProduct(pool: Pool, req: Request, res: Response) {
 }
 
 // Optimized PUT /api/products/:id
-export async function updateProduct(pool: Pool, req: Request, res: Response) {
+export async function updateProduct(pool: Pool, req: Request, res: Response, io?: any) {
   try {
     const { id } = req.params
     const { slug, title, category, price, listImage, description, details } = req.body || {}
@@ -171,7 +195,24 @@ export async function updateProduct(pool: Pool, req: Request, res: Response) {
       return sendError(res, 404, 'Product not found')
     }
     
-    sendSuccess(res, rows[0])
+    // Parse details if it's a JSON string
+    const updatedProduct = {
+      ...rows[0],
+      details: typeof rows[0].details === 'string' ? JSON.parse(rows[0].details) : rows[0].details
+    }
+    
+    // Broadcast to admin panel
+    if (io) {
+      io.to('admin-panel').emit('update', { type: 'product_updated', data: updatedProduct })
+    }
+    
+    // Broadcast to all users (for real-time updates in user panel)
+    if (io) {
+      io.to('all-users').emit('product-updated', updatedProduct)
+      io.to('all-users').emit('products-updated', updatedProduct) // Also emit for backward compatibility
+    }
+    
+    sendSuccess(res, updatedProduct)
   } catch (err: any) {
     if (err?.code === '23505') {
       sendError(res, 409, 'Product slug must be unique')
@@ -215,6 +256,7 @@ export async function uploadProductImages(pool: Pool, req: Request, res: Respons
     }
     
     let imageUrls: string[] = []
+    const imageType = body.type || 'pdp' // Default to 'pdp' if not specified
     
     // Handle multipart form data (actual file uploads)
     if (files && files.length > 0) {
@@ -228,13 +270,13 @@ export async function uploadProductImages(pool: Pool, req: Request, res: Respons
       return sendError(res, 400, 'No images provided')
     }
     
-    // Insert image URLs into database
+    // Insert image URLs into database with type
     const insertedImages = []
     
     for (const url of imageUrls) {
       const { rows } = await pool.query(
-        'INSERT INTO product_images (product_id, url) VALUES ($1, $2) RETURNING *',
-        [id, url]
+        'INSERT INTO product_images (product_id, url, type) VALUES ($1, $2, $3) RETURNING *',
+        [id, url, imageType]
       )
       insertedImages.push(rows[0])
     }

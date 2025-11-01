@@ -86,6 +86,51 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     loadCart()
   }, [isAuthenticated])
 
+  // Listen for product updates and refresh cart items with updated prices
+  useEffect(() => {
+    const handleProductUpdate = (event: CustomEvent) => {
+      const updatedProduct = event.detail
+      if (!updatedProduct || !updatedProduct.id) return
+
+      console.log('🔄 Product updated in cart, refreshing cart items:', updatedProduct)
+
+      // Update cart items that match this product
+      setItems(prevItems => {
+        const updatedItems = prevItems.map(item => {
+          if (item.product_id === updatedProduct.id) {
+            // Update with new product data
+            const updatedPrice = updatedProduct.details?.websitePrice || updatedProduct.details?.mrp || updatedProduct.price
+            return {
+              ...item,
+              title: updatedProduct.title || item.title,
+              price: updatedPrice || item.price,
+              image: updatedProduct.list_image || updatedProduct.listImage || item.image,
+              category: updatedProduct.category || item.category,
+              mrp: updatedProduct.details?.mrp || item.mrp,
+              discounted_price: updatedProduct.details?.websitePrice || item.discounted_price,
+            }
+          }
+          return item
+        })
+        return updatedItems
+      })
+
+      // Also reload cart from backend to ensure consistency
+      if (isAuthenticated) {
+        loadCart()
+      }
+    }
+
+    // Listen for both event names
+    window.addEventListener('product-updated', handleProductUpdate as EventListener)
+    window.addEventListener('refresh-products', handleProductUpdate as EventListener)
+
+    return () => {
+      window.removeEventListener('product-updated', handleProductUpdate as EventListener)
+      window.removeEventListener('refresh-products', handleProductUpdate as EventListener)
+    }
+  }, [isAuthenticated])
+
   const addItem = async (p: Product, quantity: number = 1) => {
     console.log('🛒 Adding item to cart:', { product: p.title, quantity, isAuthenticated })
     
@@ -248,21 +293,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [items, isAuthenticated])
 
+  // Calculate subtotal (MRP is tax-inclusive, so this includes tax)
   const subtotal = useMemo(() => items.reduce((sum, i) => sum + parsePrice(i.price) * i.quantity, 0), [items])
   
-  // Category-specific tax calculation
+  // Extract tax from MRP (tax-inclusive pricing)
+  // Formula: tax = price - (price / (1 + taxRate))
   const tax = useMemo(() => {
     return items.reduce((totalTax, item) => {
-      const itemSubtotal = parsePrice(item.price) * item.quantity
+      const itemPrice = parsePrice(item.price) // This is MRP which includes tax
       const category = (item.category || '').toLowerCase()
       
       // 5% tax for hair products, 18% for others
       const taxRate = category.includes('hair') ? 0.05 : 0.18
-      return totalTax + (itemSubtotal * taxRate)
+      
+      // Calculate base price (excluding tax) from tax-inclusive MRP
+      // basePrice = taxInclusivePrice / (1 + taxRate)
+      const basePrice = itemPrice / (1 + taxRate)
+      const itemTax = itemPrice - basePrice
+      
+      return totalTax + (itemTax * item.quantity)
     }, 0)
   }, [items])
   
-  const total = useMemo(() => subtotal + tax, [subtotal, tax])
+  // Total remains the same as subtotal since MRP already includes tax
+  const total = useMemo(() => subtotal, [subtotal])
   
   const coinsEarned = useMemo(() => calculatePurchaseCoins(total), [total])
 

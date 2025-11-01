@@ -6,6 +6,7 @@ export type Product = {
   price: string
   listImage: string
   pdpImages: string[]
+  bannerImages?: string[]
   description: string
   details?: any
   created_at?: string

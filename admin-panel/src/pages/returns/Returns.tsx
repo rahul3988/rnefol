@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useToast } from '../../components/ToastProvider'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 interface Return {
   id: string
@@ -27,6 +29,7 @@ interface ReturnItem {
 }
 
 const Returns = () => {
+  const { notify } = useToast()
   const [returns, setReturns] = useState<Return[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -34,6 +37,7 @@ const Returns = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // Load returns from API
   useEffect(() => {
@@ -44,10 +48,10 @@ const Returns = () => {
     try {
       setLoading(true);
       const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
-      const response = await fetch(`${apiBase}/api/returns`);
+      const response = await fetch(`${apiBase}/api/returns`, { headers: { 'x-user-role': 'admin', 'x-user-permissions': 'returns:read' } });
       if (response.ok) {
         const data = await response.json();
-        setReturns(data);
+        setReturns(Array.isArray(data) ? data : data?.data || []);
       }
     } catch (error) {
       console.error('Failed to load returns:', error);
@@ -79,19 +83,27 @@ const Returns = () => {
   const handleCreateReturn = async (returnData: Partial<Return>) => {
     setLoading(true)
     try {
-      const response = await fetch('/api/returns', {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const payload = {
+        order_id: returnData.orderId,
+        items: returnData.items || [],
+        reason: returnData.reason || ''
+      }
+      const response = await fetch(`${apiBase}/api/returns`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(returnData)
+        headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin', 'x-user-permissions': 'returns:create' },
+        body: JSON.stringify(payload)
       })
       
       if (response.ok) {
         const newReturn = await response.json()
-        setReturns([...returns, newReturn])
+        setReturns([...returns, newReturn?.data || newReturn])
         setShowCreateModal(false)
+        notify('success','Return created')
       }
     } catch (error) {
       console.error('Error creating return:', error)
+      notify('error','Failed to create return')
     } finally {
       setLoading(false)
     }
@@ -113,28 +125,32 @@ const Returns = () => {
         setReturns(returns.map(ret => ret.id === selectedReturn.id ? updatedReturn : ret))
         setShowEditModal(false)
         setSelectedReturn(null)
+        notify('success','Return updated')
       }
     } catch (error) {
       console.error('Error updating return:', error)
+      notify('error','Failed to update return')
     } finally {
       setLoading(false)
     }
   }
 
   const handleDeleteReturn = async (returnId: string) => {
-    if (!confirm('Are you sure you want to delete this return?')) return
-    
+    if (!returnId) return
     setLoading(true)
     try {
-      const response = await fetch(`/api/returns/${returnId}`, {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const response = await fetch(`${apiBase}/api/returns/${returnId}`, {
         method: 'DELETE'
       })
       
       if (response.ok) {
         setReturns(returns.filter(ret => ret.id !== returnId))
+        notify('success','Return deleted')
       }
     } catch (error) {
       console.error('Error deleting return:', error)
+      notify('error','Failed to delete return')
     } finally {
       setLoading(false)
     }
@@ -143,10 +159,11 @@ const Returns = () => {
   const handleStatusUpdate = async (returnId: string, newStatus: Return['status']) => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/returns/${returnId}`, {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const response = await fetch(`${apiBase}/api/returns/${returnId}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, updatedAt: new Date().toISOString() })
+        headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin', 'x-user-permissions': 'returns:update' },
+        body: JSON.stringify({ status: newStatus })
       })
       
       if (response.ok) {
@@ -158,6 +175,21 @@ const Returns = () => {
       console.error('Error updating return status:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGenerateLabel = async (returnId: string) => {
+    try {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const res = await fetch(`${apiBase}/api/returns/${returnId}/label`, {
+        method: 'POST',
+        headers: { 'x-user-role': 'admin', 'x-user-permissions': 'returns:update' }
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Failed to generate label')
+      alert(`Return Label: ${data?.data?.label_url || data?.label_url}`)
+    } catch (e: any) {
+      alert(e?.message || 'Failed to generate label')
     }
   }
 
@@ -363,10 +395,15 @@ const Returns = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handleDeleteReturn(returnItem.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete"
+                        onClick={() => handleGenerateLabel(returnItem.id)}
+                        className="text-indigo-600 hover:text-indigo-800"
+                        title="Generate Return Label"
                       >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                      <button onClick={()=>setConfirmDeleteId(returnItem.id)} className="text-red-600 hover:text-red-800" title="Delete">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
@@ -379,6 +416,15 @@ const Returns = () => {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        onClose={()=>setConfirmDeleteId(null)}
+        onConfirm={()=>{ if (confirmDeleteId) handleDeleteReturn(confirmDeleteId) }}
+        title="Delete this return?"
+        description="This action cannot be undone."
+        confirmText="Delete"
+      />
 
       {/* Create Return Modal */}
       {showCreateModal && (

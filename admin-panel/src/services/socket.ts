@@ -33,7 +33,20 @@ class SocketService {
 
     this.socket.on('update', (data) => {
       console.log('Received update:', data)
-      this.notifyListeners(data.type, data.data)
+      // Notify listeners with the full data object, not just data.data
+      this.notifyListeners('update', data)
+      // Also notify with specific type for backward compatibility
+      if (data.type) {
+        this.notifyListeners(data.type, data.data || data)
+      }
+    })
+
+    // Live chat events passthrough
+    this.socket.on('live-chat:message', (data) => {
+      this.notifyListeners('live-chat:message', data)
+    })
+    this.socket.on('live-chat:typing', (data) => {
+      this.notifyListeners('live-chat:typing', data)
     })
 
     this.socket.on('error', (error) => {

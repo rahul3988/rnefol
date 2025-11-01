@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { useToast } from '../components/ToastProvider'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 interface InventorySummary {
   product_id: number
@@ -16,6 +18,7 @@ interface LowStockItem {
 }
 
 export default function InventoryManagement() {
+  const { notify } = useToast()
   const [productId, setProductId] = useState<string>('')
   const [summary, setSummary] = useState<InventorySummary | null>(null)
   const [lowStock, setLowStock] = useState<LowStockItem[]>([])
@@ -25,6 +28,7 @@ export default function InventoryManagement() {
     const resp = await fetch(`/api/inventory/${productId}/summary`)
     const data = await resp.json()
     if (data.success) setSummary(data.data)
+    else notify('error','Failed to fetch summary')
   }
 
   const fetchLowStock = async () => {
@@ -33,6 +37,7 @@ export default function InventoryManagement() {
     if (data.success) setLowStock(data.data)
   }
 
+  const [confirmAdjust, setConfirmAdjust] = useState(false)
   const adjustStock = async () => {
     const [productId, variantId] = adjustment.variantId.split(':')
     const resp = await fetch(`/api/inventory/${productId}/${variantId}/adjust`, {
@@ -42,9 +47,11 @@ export default function InventoryManagement() {
     })
     const data = await resp.json()
     if (data.success) {
-      alert('Stock adjusted successfully')
+      notify('success','Stock adjusted')
       setAdjustment({ variantId: '', delta: '', reason: '' })
       fetchSummary()
+    } else {
+      notify('error','Failed to adjust stock')
     }
   }
 
@@ -53,6 +60,7 @@ export default function InventoryManagement() {
   }, [])
 
   return (
+    <>
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Inventory Management</h1>
 
@@ -100,9 +108,7 @@ export default function InventoryManagement() {
           placeholder="Reason"
           className="border p-2 rounded mr-2"
         />
-        <button onClick={adjustStock} className="px-4 py-2 bg-green-500 text-white rounded">
-          Adjust Stock
-        </button>
+        <button onClick={()=>setConfirmAdjust(true)} className="px-4 py-2 bg-green-500 text-white rounded">Adjust Stock</button>
       </div>
 
       <div>
@@ -122,6 +128,8 @@ export default function InventoryManagement() {
         )}
       </div>
     </div>
+    <ConfirmDialog open={confirmAdjust} onClose={()=>setConfirmAdjust(false)} onConfirm={adjustStock} title="Adjust stock?" description="Please confirm updating stock levels." confirmText="Adjust" />
+    </>
   )
 }
 

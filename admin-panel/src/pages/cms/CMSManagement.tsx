@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, ChevronUp, ChevronDown, Wifi, WifiOff, Settings } from 'lucide-react'
 import { socketService } from '../../services/socket'
+import { useToast } from '../../components/ToastProvider'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 interface CMSPage {
   id: number
@@ -26,6 +28,7 @@ interface CMSSection {
 }
 
 export default function CMSManagement() {
+  const { notify } = useToast()
   const [pages, setPages] = useState<CMSPage[]>([])
   const [selectedPage, setSelectedPage] = useState<string>('')
   const [sections, setSections] = useState<CMSSection[]>([])
@@ -61,6 +64,7 @@ export default function CMSManagement() {
       }
     } catch (error) {
       console.error('Failed to fetch pages:', error)
+      notify('error','Failed to fetch pages')
     }
   }
 
@@ -85,6 +89,7 @@ export default function CMSManagement() {
       setSections(transformedData)
     } catch (error) {
       console.error('Failed to fetch sections:', error)
+      notify('error','Failed to fetch sections')
     }
   }
 
@@ -145,24 +150,27 @@ export default function CMSManagement() {
         await fetchPages()
         setShowPageForm(false)
         setEditingPage(null)
+        notify('success','Page saved')
       }
     } catch (error) {
       console.error('Failed to save page:', error)
+      notify('error','Failed to save page')
     }
   }
 
   // Delete page
+  const [confirmDeletePage, setConfirmDeletePage] = useState<string | null>(null)
   const handleDeletePage = async (pageName: string) => {
-    if (!confirm('Are you sure you want to delete this page and all its sections?')) return
-    
     try {
       await fetch(`${API_BASE}/api/cms/pages/${pageName}`, { method: 'DELETE' })
       await fetchPages()
       if (selectedPage === pageName) {
         setSelectedPage('')
       }
+      notify('success','Page deleted')
     } catch (error) {
       console.error('Failed to delete page:', error)
+      notify('error','Failed to delete page')
     }
   }
 
@@ -186,21 +194,24 @@ export default function CMSManagement() {
         await fetchSections(selectedPage)
         setShowSectionForm(false)
         setEditingSection(null)
+        notify('success','Section saved')
       }
     } catch (error) {
       console.error('Failed to save section:', error)
+      notify('error','Failed to save section')
     }
   }
 
   // Delete section
+  const [confirmDeleteSection, setConfirmDeleteSection] = useState<number | null>(null)
   const handleDeleteSection = async (sectionId: number) => {
-    if (!confirm('Are you sure you want to delete this section?')) return
-    
     try {
       await fetch(`${API_BASE}/api/cms/sections/${sectionId}`, { method: 'DELETE' })
       await fetchSections(selectedPage)
+      notify('success','Section deleted')
     } catch (error) {
       console.error('Failed to delete section:', error)
+      notify('error','Failed to delete section')
     }
   }
 
@@ -334,7 +345,7 @@ export default function CMSManagement() {
                       <Edit2 className="w-4 h-4 text-blue-600" />
                     </button>
                     <button
-                      onClick={() => handleDeletePage(page.page_name)}
+                      onClick={() => setConfirmDeletePage(page.page_name)}
                       className="p-1 hover:bg-gray-200 rounded"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
@@ -458,7 +469,7 @@ export default function CMSManagement() {
                               <Edit2 className="w-5 h-5 text-blue-600" />
                             </button>
                             <button
-                              onClick={() => handleDeleteSection(section.id)}
+                              onClick={() => setConfirmDeleteSection(section.id)}
                               className="p-1 hover:bg-gray-200 rounded"
                             >
                               <Trash2 className="w-5 h-5 text-red-600" />
@@ -517,6 +528,8 @@ export default function CMSManagement() {
           }}
         />
       )}
+      <ConfirmDialog open={!!confirmDeletePage} onClose={()=>setConfirmDeletePage(null)} onConfirm={()=>{ if (confirmDeletePage) handleDeletePage(confirmDeletePage) }} title="Delete this page?" description="This will remove all its sections." confirmText="Delete" />
+      <ConfirmDialog open={!!confirmDeleteSection} onClose={()=>setConfirmDeleteSection(null)} onConfirm={()=>{ if (confirmDeleteSection!=null) handleDeleteSection(confirmDeleteSection) }} title="Delete this section?" description="This action cannot be undone." confirmText="Delete" />
     </div>
   )
 }

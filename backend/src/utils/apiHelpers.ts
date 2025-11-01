@@ -105,6 +105,30 @@ export function authenticateToken(req: Request, res: Response, next: Function) {
   next()
 }
 
+// Simple role/permission checkers (to be wired with real auth later)
+export function requireRole(roles: string[]) {
+  return (req: Request, res: Response, next: Function) => {
+    // Prefer role attached by auth layer
+    const role = (req as any).userRole || (req.headers['x-user-role'] as string) || ''
+    if (!role || !roles.includes(role)) {
+      return sendError(res, 403, 'Forbidden')
+    }
+    next()
+  }
+}
+
+export function requirePermission(perms: string[]) {
+  return (req: Request, res: Response, next: Function) => {
+    const attached = (req as any).userPermissions as string[] | undefined
+    const userPerms = attached && Array.isArray(attached)
+      ? attached
+      : ((req.headers['x-user-permissions'] as string) || '').split(',').map(s => s.trim()).filter(Boolean)
+    const ok = perms.every(perm => userPerms.includes(perm))
+    if (!ok) return sendError(res, 403, 'Forbidden')
+    next()
+  }
+}
+
 // CSV parsing utility
 export function parseCSVLine(line: string): string[] {
   const result: string[] = []

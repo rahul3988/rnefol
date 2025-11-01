@@ -255,6 +255,11 @@ export const configService = new ConfigService()
 // Load config from storage on initialization
 configService.loadFromStorage()
 
+// Helper function to get API base URL
+export function getApiBase(): string {
+  return configService.getApiConfig().baseUrl
+}
+
 export default configService
 
 

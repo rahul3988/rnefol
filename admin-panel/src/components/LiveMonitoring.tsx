@@ -20,10 +20,15 @@ export default function LiveMonitoring() {
   const [searchQueries, setSearchQueries] = useState<string[]>([])
 
   useEffect(() => {
+    // Ensure socket connection
+    if (!socketService.isConnected()) {
+      socketService.connect()
+    }
+    
     // Subscribe to live users count
     const unsubscribeLiveUsers = socketService.subscribe('live-users-count', (data: any) => {
       console.log('📊 Live users count:', data.count)
-      setLiveUsers(data.count)
+      setLiveUsers(data.count || 0)
     })
 
     // Subscribe to page view updates

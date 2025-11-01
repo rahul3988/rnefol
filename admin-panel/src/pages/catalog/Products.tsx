@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { useToast } from '../../components/ToastProvider'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { parseCSV, slugify } from '../../utils/csv'
 import { uploadFile } from '../../utils/upload'
+import { socketService } from '../../services/socket'
 
 
 type Product = {
@@ -17,6 +20,7 @@ type Product = {
 
 export default function Products() {
   return (
+    <>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Products</h1>
@@ -26,10 +30,12 @@ export default function Products() {
       </div>
       <ProductsManager />
     </div>
+    </>
   )
 }
 
 function ProductsManager() {
+  const { notify } = useToast()
   const [items, setItems] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +48,7 @@ function ProductsManager() {
   const [bulkLoading, setBulkLoading] = useState(false)
   const [selected, setSelected] = useState<Product | null>(null)
   const [pdpImages, setPdpImages] = useState<string[]>([])
+  const [bannerImages, setBannerImages] = useState<string[]>([])
   const [form, setForm] = useState<Partial<Product>>({
     slug: '', title: '', category: '', price: '', list_image: '', description: '',     details: {
       sku: '', hsn: '', mrp: '', websitePrice: '', discountPercent: '', brand: '', subtitle: '',
@@ -97,7 +104,25 @@ function ProductsManager() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { 
+    load()
+
+    // Listen for product updates via socket
+    const unsubscribeProductUpdate = socketService.subscribe('product_updated', (data: any) => {
+      console.log('🔄 Product updated in Products page:', data)
+      load() // Reload products when any product is updated
+    })
+
+    const unsubscribeProductsUpdate = socketService.subscribe('products_updated', (data: any) => {
+      console.log('🔄 Products updated in Products page:', data)
+      load() // Reload products when any product is updated
+    })
+
+    return () => {
+      if (unsubscribeProductUpdate) unsubscribeProductUpdate()
+      if (unsubscribeProductsUpdate) unsubscribeProductsUpdate()
+    }
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -107,7 +132,7 @@ function ProductsManager() {
         try {
           listImageUrl = await uploadFile(formMainImage, apiBase)
         } catch (_) {
-          alert('Main image upload failed')
+          notify('error','Main image upload failed')
           return
         }
       }
@@ -147,18 +172,19 @@ function ProductsManager() {
       setFormMainImage(null)
       setFormPdpImages([])
     } catch (e) {
-      alert('Create failed')
+      notify('error','Create failed')
     }
   }
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const remove = async (id: number) => {
-    if (!confirm('Delete product?')) return
     try {
       const res = await fetch(`${apiBase}/api/products/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('delete failed')
       await load()
+      notify('success','Product deleted')
     } catch (e) {
-      alert('Delete failed')
+      notify('error','Delete failed')
     }
   }
 
@@ -180,7 +206,7 @@ function ProductsManager() {
     e.preventDefault()
     if (!editing || !editing.id) return
     if (!editing.title || !editing.slug) {
-      alert('Slug and Title are required')
+      notify('error','Slug and Title are required')
       return
     }
     try {
@@ -200,8 +226,9 @@ function ProductsManager() {
       if (!res.ok) throw new Error('update failed')
       await load()
       setEditing(null)
+      notify('success','Product updated')
     } catch (e) {
-      alert('Update failed')
+      notify('error','Update failed')
     }
   }
 
@@ -230,11 +257,12 @@ function ProductsManager() {
   }, [items, query, categoryFilter, sortKey, sortDir])
 
   return (
+    <>
     <div className="space-y-6">
       <div className="metric-card">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Bulk Import</h2>
-        <div className="mb-3 rounded bg-blue-50 p-3 text-sm text-blue-800">
-          <strong>Note:</strong> CSV import will only import text fields (title, category, price, description). Images need to be uploaded manually after import.
+        <div className="mb-3 rounded bg-green-50 p-3 text-sm text-green-800">
+          <strong>✅ Enhanced Bulk Import:</strong> CSV import will automatically map all product fields including pricing, GST, packaging, ingredients, and more. First image from Image Links will be used as list image. Remaining fields can be updated manually after import.
         </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={async (e)=>{
@@ -258,13 +286,21 @@ function ProductsManager() {
             try {
               const tryGet = (row: Record<string, any>, keys: string[]): string => {
                 const entries = Object.entries(row)
-                const found = keys.find(k => entries.some(([rk]) => rk.toLowerCase().replace(/\s+|_/g,'') === k))
+                const found = keys.find(k => entries.some(([rk]) => rk.toLowerCase().replace(/\s+|_|\(|\)/g,'') === k.toLowerCase().replace(/\s+|_|\(|\)/g,'')))
                 if (!found) return ''
-                const matchKey = entries.find(([rk]) => rk.toLowerCase().replace(/\s+|_/g,'') === found)![0]
+                const matchKey = entries.find(([rk]) => rk.toLowerCase().replace(/\s+|_|\(|\)/g,'') === found.toLowerCase().replace(/\s+|_|\(|\)/g,''))![0]
                 const v = row[matchKey]
-                if (v == null) return ''
+                if (v == null || v === '') return ''
                 return String(v).trim()
               }
+              
+              // Helper to extract first image from comma-separated list
+              const getFirstImage = (imageLinks: string): string => {
+                if (!imageLinks) return ''
+                const first = imageLinks.split(',')[0].trim()
+                return first || ''
+              }
+              
               let success = 0
               let failed = 0
               const errors: string[] = []
@@ -272,8 +308,10 @@ function ProductsManager() {
               
               for (let i = 0; i < bulkRows.length; i++) {
                 const r = bulkRows[i]
-                const title = tryGet(r, ['title','producttitle','name'])
-                const baseSlug = tryGet(r, ['slug']) || slugify(title)
+                
+                // Basic fields
+                const title = tryGet(r, ['product name', 'title', 'producttitle', 'name', 'Product Name'])
+                const baseSlug = tryGet(r, ['slug', 'Slug']) || slugify(title)
                 
                 // Ensure unique slug
                 let slugVal = baseSlug
@@ -284,11 +322,87 @@ function ProductsManager() {
                 }
                 createdSlugs.add(slugVal)
                 
-                const category = tryGet(r, ['category','cat'])
-                const priceRaw = tryGet(r, ['price','mrp','amount'])
-                const description = tryGet(r, ['description','desc'])
+                const category = tryGet(r, ['product category', 'category', 'cat', 'Product Category'])
+                const mrp = tryGet(r, ['mrp', 'MRP', 'MRP '])
+                const websitePrice = tryGet(r, ['website price', 'websiteprice', 'websiteprice', 'WEBSITE price', 'websitePrice'])
+                const discountPercent = tryGet(r, ['discount', 'discountpercent', 'discount %', 'Discount %', 'discountPercent'])
+                const priceRaw = websitePrice || mrp || tryGet(r, ['price', 'amount'])
+                const description = tryGet(r, ['product description (long)', 'longdescription', 'description', 'desc', 'Product Description (Long)'])
                 const price = priceRaw ? String(priceRaw) : ''
-                const payload = { slug: slugVal, title, category, price, listImage: '', description, details: {} }
+                
+                // Extract first image from image links
+                const imageLinksStr = tryGet(r, ['image links', 'imagelinks', 'Image Links', 'imageLinks'])
+                const listImage = getFirstImage(imageLinksStr)
+                
+                // Build comprehensive details object from CSV
+                const details: any = {
+                  // Basic Product Info
+                  sku: tryGet(r, ['sku', 'SKU']),
+                  hsn: tryGet(r, ['hsn code', 'hsncode', 'HSN Code', 'hsn']),
+                  brand: tryGet(r, ['brand name', 'brandname', 'Brand Name', 'brand']) || 'NEFOL',
+                  productTitle: tryGet(r, ['product title', 'producttitle', 'Product Title', 'productTitle']),
+                  subtitle: tryGet(r, ['subtitle / tagline', 'subtitle', 'Subtitle / Tagline', 'subtitle']),
+                  
+                  // Category & Type
+                  subCategory: tryGet(r, ['product sub-category', 'subcategory', 'Product Sub-Category', 'subCategory']),
+                  productType: tryGet(r, ['product type', 'producttype', 'Product Type', 'productType']),
+                  skinHairType: tryGet(r, ['skin/hair type', 'skinhairtype', 'Skin/Hair Type', 'skinHairType']),
+                  
+                  // Pricing
+                  mrp: mrp || '',
+                  websitePrice: websitePrice || '',
+                  discountPercent: discountPercent || (mrp && websitePrice ? 
+                    String(Math.round(((parseFloat(mrp) - parseFloat(websitePrice)) / parseFloat(mrp)) * 100)) : ''),
+                  discount: discountPercent || '',
+                  gst: tryGet(r, ['gst %', 'gstpercent', 'GST %', 'gstPercent', 'gst']),
+                  gstPercent: tryGet(r, ['gst %', 'gstpercent', 'GST %', 'gstPercent', 'gst']),
+                  
+                  // Packaging & Quantity
+                  netQuantity: tryGet(r, ['net quantity (content)', 'netquantity', 'Net Quantity (Content)', 'netQuantity']),
+                  unitCount: tryGet(r, ['unit count (pack of)', 'unitcount', 'Unit Count (Pack of)', 'unitCount']),
+                  netWeight: tryGet(r, ['net weight (product only)', 'netweight', 'Net Weight (Product Only)', 'netWeight']),
+                  deadWeight: tryGet(r, ['dead weight (packaging only)', 'deadweight', 'Dead Weight (Packaging Only)', 'deadWeight']),
+                  packageContent: tryGet(r, ['package content details', 'packagecontent', 'Package Content Details', 'packageContent']),
+                  innerPackaging: tryGet(r, ['inner packaging type', 'innerpackaging', 'Inner Packaging Type', 'innerPackaging']),
+                  outerPackaging: tryGet(r, ['outer packaging type', 'outerpackaging', 'Outer Packaging Type', 'outerPackaging']),
+                  
+                  // Manufacturer & Origin
+                  countryOfOrigin: tryGet(r, ['country of origin', 'countryoforigin', 'Country of Origin', 'countryOfOrigin']),
+                  manufacturer: tryGet(r, ['manufacturer / packer / importer', 'manufacturer', 'Manufacturer / Packer / Importer', 'manufacturer']),
+                  
+                  // Product Details
+                  keyIngredients: tryGet(r, ['key ingredients', 'keyingredients', 'Key Ingredients', 'keyIngredients']),
+                  ingredientBenefits: tryGet(r, ['ingredient benefits', 'ingredientbenefits', 'Ingredient Benefits', 'ingredientBenefits']),
+                  howToUse: tryGet(r, ['how to use (steps)', 'howtouse', 'How to Use (Steps)', 'howToUse', 'how to use']),
+                  longDescription: description || tryGet(r, ['product description (long)', 'longdescription', 'Product Description (Long)', 'longDescription']),
+                  bulletHighlights: tryGet(r, ['bullet highlights', 'bullethighlights', 'Bullet Highlights', 'bulletHighlights']),
+                  
+                  // Media & Links
+                  imageLinks: imageLinksStr || '',
+                  videoLinks: tryGet(r, ['video links', 'videolinks', 'Video Links', 'videoLinks']),
+                  
+                  // Additional Information
+                  platformCategoryMapping: tryGet(r, ['platform category mapping', 'platformcategorymapping', 'Platform Category Mapping', 'platformCategoryMapping']),
+                  hazardous: tryGet(r, ['hazardous / fragile (y/n)', 'hazardous', 'Hazardous / Fragile (Y/N)', 'hazardous']),
+                  badges: tryGet(r, ['special attributes (badges)', 'badges', 'Special Attributes (Badges)', 'badges']),
+                }
+                
+                // Remove empty fields to keep details clean
+                Object.keys(details).forEach(key => {
+                  if (details[key] === '' || details[key] === null || details[key] === undefined) {
+                    delete details[key]
+                  }
+                })
+                
+                const payload = { 
+                  slug: slugVal, 
+                  title, 
+                  category, 
+                  price, 
+                  listImage, 
+                  description, 
+                  details 
+                }
                 
                 if (!payload.title || !payload.slug) { 
                   failed++; 
@@ -330,11 +444,11 @@ function ProductsManager() {
               await load()
               setBulkRows([])
               
-              const message = `Import complete!\n✅ Success: ${success}\n❌ Failed: ${failed}${failed && errors.length > 0 ? `\n\nErrors:\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...' : ''}` : ''}`
-              alert(message)
+              const message = `Import complete! Success: ${success}, Failed: ${failed}`
+              notify(failed? 'error':'success', message)
             } catch (e) {
               console.error('Import failed:', e)
-              alert(`Import failed: ${e}`)
+              notify('error', `Import failed: ${e}` as any)
             } finally {
               setBulkLoading(false)
             }
@@ -523,9 +637,26 @@ function ProductsManager() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex gap-2">
-                        <button onClick={()=>{setSelected(p); setPdpImages([])}} className="rounded bg-white/10 px-3 py-1 text-xs hover:bg-white/15">Images</button>
+                        <button onClick={async ()=>{
+                          setSelected(p)
+                          setPdpImages([])
+                          setBannerImages([])
+                          // Load existing images
+                          try {
+                            const imagesRes = await fetch(`${apiBase}/api/products/${p.id}/images`)
+                            if (imagesRes.ok) {
+                              const images = await imagesRes.json()
+                              const pdpImgs = images.filter((img: any) => img.type === 'pdp' || !img.type).map((img: any) => img.url)
+                              const bannerImgs = images.filter((img: any) => img.type === 'banner').map((img: any) => img.url)
+                              setPdpImages(pdpImgs)
+                              setBannerImages(bannerImgs)
+                            }
+                          } catch (_) {
+                            // ignore errors
+                          }
+                        }} className="rounded bg-white/10 px-3 py-1 text-xs hover:bg-white/15">Images</button>
                         <button onClick={()=>startEdit(p)} className="rounded bg-white/10 px-3 py-1 text-xs hover:bg-white/15">Edit</button>
-                        <button onClick={()=>remove(p.id)} className="rounded bg-red-600 px-3 py-1 text-xs hover:bg-red-700">Delete</button>
+                        <button onClick={()=>setConfirmDeleteId(p.id)} className="rounded bg-red-600 px-3 py-1 text-xs hover:bg-red-700">Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -565,8 +696,9 @@ function ProductsManager() {
                         setSelected(prev => prev ? { ...prev, list_image: url } as Product : prev)
                         // also refresh from server to ensure DB persisted
                         await load()
+                        notify('success','Main image updated')
                       } catch (_) {
-                        alert('Upload failed')
+                        notify('error','Upload failed')
                       }
                     }} />
                   </div>
@@ -598,10 +730,49 @@ function ProductsManager() {
                         await fetch(`${apiBase}/api/products/${selected.id}/images`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ images: uploaded })
+                          body: JSON.stringify({ images: uploaded, type: 'pdp' })
                         })
+                        await load()
+                        notify('success','PDP images uploaded')
                       } catch (_) {
-                        alert('Upload failed')
+                        notify('error','Upload failed')
+                      }
+                    }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-sm text-gray-700">Banner images</div>
+                  <div className="flex flex-wrap gap-2">
+                    {bannerImages.map((u,idx)=>{
+                      const abs = toAbs(u)
+                      const isVid = /\.(mp4|webm|ogg)(\?|$)/i.test(abs)
+                      return isVid ? (
+                        <video key={idx} src={abs} className="h-16 w-16 rounded object-cover" />
+                      ) : (
+                        <img key={idx} src={abs} className="h-16 w-16 rounded object-cover" />
+                      )
+                    })}
+                  </div>
+                  <div className="mt-2">
+                    <input multiple type="file" accept="image/*,video/*" className="rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500" onChange={async e=>{
+                      const files = Array.from(e.target.files || [])
+                      if (!files.length) return
+                      try {
+                        const uploaded: string[] = []
+                        for (const f of files) {
+                          const url = await uploadFile(f, apiBase)
+                          uploaded.push(url)
+                        }
+                        setBannerImages(prev => [...prev, ...uploaded])
+                        await fetch(`${apiBase}/api/products/${selected.id}/images`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ images: uploaded, type: 'banner' })
+                        })
+                        await load()
+                        notify('success','Banner images uploaded')
+                      } catch (_) {
+                        notify('error','Upload failed')
                       }
                     }} />
                   </div>
@@ -611,18 +782,22 @@ function ProductsManager() {
           </div>
         )}
         {editing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-            <div className="w-full max-w-4xl rounded-lg border border-gray-300 bg-white p-6 shadow-xl my-8">
-              <div className="mb-4 flex items-center justify-between sticky top-0 bg-white z-10 pb-4">
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+            <div className="w-full max-w-4xl rounded-lg border border-gray-300 bg-white shadow-xl my-8">
+              {/* Sticky Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10 flex items-center justify-between rounded-t-lg">
                 <h3 className="text-lg font-semibold text-gray-900">Edit Product - {editing.title}</h3>
                 <button onClick={()=>setEditing(null)} className="rounded bg-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-300">Close</button>
               </div>
-              <form onSubmit={saveEdit} className="space-y-6">
+              
+              {/* Scrollable Form Content */}
+              <div className="max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6">
+                <form onSubmit={saveEdit} className="space-y-6">
                 
                 {/* Basic Information */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Basic Information</h4>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Basic Information</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Product Name *" value={editing.title||''} onChange={e=>setEditing(prev=>({...(prev as any), title:e.target.value}))} required />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Slug *" value={editing.slug||''} onChange={e=>setEditing(prev=>({...(prev as any), slug:e.target.value}))} required />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Brand Name" value={editing.details?.brand||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), brand:e.target.value}}))} />
@@ -634,9 +809,9 @@ function ProductsManager() {
                 </div>
 
                 {/* Category & Type */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Category & Type</h4>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Category & Type</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <select 
                       className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
                       value={editing.category||''} 
@@ -656,9 +831,9 @@ function ProductsManager() {
                 </div>
 
                 {/* Pricing */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Pricing</h4>
-                  <div className="grid grid-cols-3 gap-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Pricing</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">MRP (₹)</label>
                       <input 
@@ -762,9 +937,9 @@ function ProductsManager() {
                 </div>
 
                 {/* Packaging & Quantity */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Packaging & Quantity</h4>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Packaging & Quantity</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Net Quantity" value={editing.details?.netQuantity||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), netQuantity:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Unit Count (Pack of)" value={editing.details?.unitCount||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), unitCount:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Net Weight" value={editing.details?.netWeight||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), netWeight:e.target.value}}))} />
@@ -776,18 +951,18 @@ function ProductsManager() {
                 </div>
 
                 {/* Manufacturer & Origin */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Manufacturer & Origin</h4>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Manufacturer & Origin</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Country of Origin" value={editing.details?.countryOfOrigin||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), countryOfOrigin:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Manufacturer / Packer / Importer" value={editing.details?.manufacturer||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), manufacturer:e.target.value}}))} />
                   </div>
                 </div>
 
                 {/* Product Details */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Product Details</h4>
-                  <div className="space-y-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Product Details</h4>
+                  <div className="space-y-4">
                     <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Key Ingredients" rows={2} value={editing.details?.keyIngredients||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), keyIngredients:e.target.value}}))} />
                     <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Ingredient Benefits" rows={2} value={editing.details?.ingredientBenefits||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), ingredientBenefits:e.target.value}}))} />
                     <textarea className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="How to Use" rows={2} value={editing.details?.howToUse||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), howToUse:e.target.value}}))} />
@@ -799,9 +974,9 @@ function ProductsManager() {
                 </div>
 
                 {/* Media & Links */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Media & Links</h4>
-                  <div className="grid grid-cols-1 gap-3">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Media & Links</h4>
+                  <div className="grid grid-cols-1 gap-4">
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="List Image URL" value={editing.list_image||''} onChange={e=>setEditing(prev=>({...(prev as any), list_image:e.target.value}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Image Links (comma separated)" value={editing.details?.imageLinks||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), imageLinks:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Video Links (comma separated)" value={editing.details?.videoLinks||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), videoLinks:e.target.value}}))} />
@@ -809,24 +984,29 @@ function ProductsManager() {
                 </div>
 
                 {/* Additional Information */}
-                <div className="border-b pb-4">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Additional Information</h4>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="border-b border-gray-200 pb-4 mb-4">
+                  <h4 className="text-base font-semibold text-gray-800 mb-4">Additional Information</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Platform Category Mapping" value={editing.details?.platformCategoryMapping||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), platformCategoryMapping:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Hazardous / Fragile (Y/N)" value={editing.details?.hazardous||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), hazardous:e.target.value}}))} />
                     <input className="rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 md:col-span-2" placeholder="Special Attributes (Badges)" value={editing.details?.badges||''} onChange={e=>setEditing(prev=>({...(prev as any), details: { ...(prev?.details||{}), badges:e.target.value}}))} />
                   </div>
                 </div>
 
-                {/* Submit Button */}
-                <div className="sticky bottom-0 bg-white pt-4 border-t">
-                  <button type="submit" className="w-full rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700">💾 Save All Changes</button>
-                </div>
-              </form>
+                  {/* Submit Button */}
+                  <div className="sticky bottom-0 bg-white pt-4 pb-2 -mx-6 px-6 border-t border-gray-200">
+                    <button type="submit" className="w-full rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 transition-colors">
+                      💾 Save All Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         )}
       </div>
     </div>
+    <ConfirmDialog open={!!confirmDeleteId} onClose={()=>setConfirmDeleteId(null)} onConfirm={()=>{ if (confirmDeleteId!=null) remove(confirmDeleteId) }} title="Delete this product?" description="This action cannot be undone." confirmText="Delete" />
+    </>
   )
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Menu, X } from 'lucide-react'
 import SplashScreen from './components/SplashScreen'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
@@ -35,6 +36,10 @@ import Orders from './pages/Orders'
 import Account from './pages/Account'
 import Community from './pages/Community'
 import Notifications from './pages/Notifications'
+import LiveChatWidget from './components/LiveChatWidget'
+import SmoothScroll from './components/SmoothScroll'
+import NewsletterPopup from './components/NewsletterPopup'
+import SearchButton from './components/SearchButton'
 import PrivacySecurity from './pages/PrivacySecurity'
 import PaymentMethods from './pages/PaymentMethods'
 import LoyaltyRewards from './pages/LoyaltyRewards'
@@ -106,6 +111,15 @@ function AppContent() {
       console.log('🛍️ Product updated:', data)
       // Refresh product data if on product page
       window.dispatchEvent(new CustomEvent('product-updated', { detail: data }))
+      // Also dispatch to refresh all pages
+      window.dispatchEvent(new CustomEvent('refresh-products', { detail: data }))
+    })
+
+    // Also listen for the new event name
+    const unsubscribeProductUpdateAlt = userSocketService.subscribe('product-updated', (data: any) => {
+      console.log('🛍️ Product updated (alt):', data)
+      window.dispatchEvent(new CustomEvent('product-updated', { detail: data }))
+      window.dispatchEvent(new CustomEvent('refresh-products', { detail: data }))
     })
 
     // Listen for product creation
@@ -134,6 +148,7 @@ function AppContent() {
       unsubscribeCartSync()
       unsubscribeOrderUpdate()
       unsubscribeProductUpdate()
+      unsubscribeProductUpdateAlt()
       unsubscribeProductCreated()
       unsubscribeProductDeleted()
       unsubscribeDiscountUpdate()
@@ -168,7 +183,7 @@ function AppContent() {
         <SplashScreen onComplete={handleSplashComplete} />
       ) : (
         <>
-          <header className="nav-glass">
+          <header className="bg-white shadow-sm">
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
               <Logo className="font-display text-2xl font-bold text-gradient-primary hover:text-gradient-secondary transition-all duration-300" />
               
@@ -214,7 +229,10 @@ function AppContent() {
               
               <div className="flex items-center gap-2 sm:gap-4">
                 <button 
-                  onClick={() => window.location.hash = '#/user/search'}
+                  onClick={() => {
+                    const event = new CustomEvent('open-search')
+                    window.dispatchEvent(event)
+                  }}
                   className="neu w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center hover:scale-110 transition-all duration-300" 
                   aria-label="Search"
                 >
@@ -261,7 +279,11 @@ function AppContent() {
                   className="neu w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center hover:scale-110 transition-all duration-300 md:hidden" 
                   aria-label="Menu"
                 >
-                  <span className="text-base sm:text-lg">{showMobileMenu ? '✕' : '☰'}</span>
+                  {showMobileMenu ? (
+                    <X className="h-5 w-5 sm:h-6 sm:w-6 text-slate-700" aria-hidden="true" />
+                  ) : (
+                    <Menu className="h-5 w-5 sm:h-6 sm:w-6 text-slate-700" aria-hidden="true" />
+                  )}
                 </button>
               </div>
             </div>
@@ -343,7 +365,9 @@ function AppContent() {
             </div>
           )}
 
-        <RouterView affiliateId={affiliateId} />
+        <SmoothScroll>
+          <RouterView affiliateId={affiliateId} />
+        </SmoothScroll>
 
       <footer className="border-t border-gray-800 bg-gray-900 py-8 sm:py-12 md:py-16 text-sm text-gray-400">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 sm:gap-8 px-4 sm:grid-cols-2 md:grid-cols-6">
@@ -361,6 +385,9 @@ function AppContent() {
               <li><a href="#/user/hair" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">Hair</a></li>
               <li><a href="#/user/combos" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">Combos</a></li>
               <li><a href="#/user/blog" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">Blogs</a></li>
+              <li><a href="#/user/offers" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">Offers</a></li>
+              <li><a href="#/user/new-arrivals" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">New Arrivals</a></li>
+              <li><a href="#/user/best-sellers" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors font-light">Best Sellers</a></li>
             </ul>
           </div>
           <div>
@@ -371,6 +398,9 @@ function AppContent() {
               <li><a href="#/user/orders" className="text-gray-400 hover:text-white transition-colors font-light">Orders</a></li>
               <li><a href="#/user/account" className="text-gray-400 hover:text-white transition-colors font-light">Account</a></li>
               <li><a href="#/user/community" className="text-gray-400 hover:text-white transition-colors font-light">Community</a></li>
+              <li><a href="#/user/shade-finder" className="text-gray-400 hover:text-white transition-colors font-light">Shade Finder</a></li>
+              <li><a href="#/user/skin-quiz" className="text-gray-400 hover:text-white transition-colors font-light">Skin Quiz</a></li>
+              <li><a href="#/user/gifting" className="text-gray-400 hover:text-white transition-colors font-light">Gifting Studio</a></li>
             </ul>
           </div>
           <div>
@@ -381,6 +411,8 @@ function AppContent() {
               <li><a href="#/user/chairperson-message" className="text-gray-400 hover:text-white transition-colors font-light">Chairperson Message</a></li>
               <li><a href="#/user/usp" className="text-gray-400 hover:text-white transition-colors font-light">Why Choose Nefol</a></li>
               <li><a href="#/user/blue-tea-benefits" className="text-gray-400 hover:text-white transition-colors font-light">Blue Tea Benefits</a></li>
+              <li><a href="#/user/sustainability" className="text-gray-400 hover:text-white transition-colors font-light">Sustainability</a></li>
+              <li><a href="#/user/press" className="text-gray-400 hover:text-white transition-colors font-light">Press & Media</a></li>
             </ul>
           </div>
           <div>
@@ -390,6 +422,8 @@ function AppContent() {
               <li><a href="#/user/refund-policy" className="text-gray-400 hover:text-white transition-colors font-light">Refund Policy</a></li>
               <li><a href="#/user/shipping-policy" className="text-gray-400 hover:text-white transition-colors font-light">Shipping Policy</a></li>
               <li><a href="#/user/terms-of-service" className="text-gray-400 hover:text-white transition-colors font-light">Terms of Service</a></li>
+              <li><a href="#/user/track-order" className="text-gray-400 hover:text-white transition-colors font-light">Track Order</a></li>
+              <li><a href="#/user/store-locator" className="text-gray-400 hover:text-white transition-colors font-light">Store Locator</a></li>
             </ul>
           </div>
           <div className="md:col-span-2">
@@ -441,6 +475,9 @@ function AppContent() {
         </div>
       )}
 
+          <LiveChatWidget />
+          <NewsletterPopup />
+          <SearchButton />
         </>
       )}
     </div>
@@ -462,6 +499,16 @@ import ReferralHistory from './pages/ReferralHistory'
 import Reports from './pages/Reports'
 import Checkout from './pages/Checkout'
 import Confirmation from './pages/Confirmation'
+import OffersPage from './pages/Offers'
+import NewArrivalsPage from './pages/NewArrivals'
+import BestSellersPage from './pages/BestSellers'
+import GiftingPage from './pages/Gifting'
+import StoreLocatorPage from './pages/StoreLocator'
+import ShadeFinderPage from './pages/ShadeFinder'
+import SkinQuizPage from './pages/SkinQuiz'
+import TrackOrderPage from './pages/TrackOrder'
+import SustainabilityPage from './pages/Sustainability'
+import PressMediaPage from './pages/PressMedia'
 
 interface RouterViewProps {
   affiliateId?: string | null
@@ -537,8 +584,18 @@ function RouterView({ affiliateId }: RouterViewProps) {
     case '/user/payment-methods': return <PaymentMethods />
     case '/user/loyalty-rewards': return <LoyaltyRewards />
     case '/user/combos': return <Combos />
+    case '/user/gifting': return <GiftingPage />
     case '/user/cart': return <Cart />
     case '/user/search': return <SearchPage />
+    case '/user/offers': return <OffersPage />
+    case '/user/new-arrivals': return <NewArrivalsPage />
+    case '/user/best-sellers': return <BestSellersPage />
+    case '/user/store-locator': return <StoreLocatorPage />
+    case '/user/shade-finder': return <ShadeFinderPage />
+    case '/user/skin-quiz': return <SkinQuizPage />
+    case '/user/track-order': return <TrackOrderPage />
+    case '/user/sustainability': return <SustainabilityPage />
+    case '/user/press': return <PressMediaPage />
     default:
       return <Home />
   }

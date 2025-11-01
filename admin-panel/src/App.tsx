@@ -1,17 +1,21 @@
 ﻿import React, { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
+import Can from './components/Can'
 import Layout from './layouts/Layout'
 import { AuthProvider } from './contexts/AuthContext'
+import ToastProvider from './components/ToastProvider'
 import { socketService } from './services/socket'
 import { 
   Dashboard, Orders, Customers, Users, Categories, Settings, Products,
-  Analytics, Marketing, Discounts, FacebookInstagram, OnlineStore, GoogleYouTube, Forms,
+  Analytics, Marketing, WhatsAppSubscriptions, Discounts, FacebookInstagram, OnlineStore, GoogleYouTube, Forms,
   Invoice, InvoiceSettings, Tax, Returns, Payment, UserProfiles, UserNotifications, LoyaltyProgramManagement,
-  StaticPagesManagement, CommunityManagement, CartCheckoutManagement, AffiliateManagement, AffiliateRequests
+  StaticPagesManagement, CommunityManagement, CartCheckoutManagement, AffiliateManagement, AffiliateRequests,
+  Staff, RolesPermissions, AuditLogs, AlertSettings, HomepageLayoutManager
 } from './pages'
 import UserDetail from './pages/users/UserDetail'
 import Shipments from './pages/sales/Shipments'
+import OrderDetails from './pages/sales/OrderDetails'
 import LoginPage from './pages/Login'
 import CMS from './pages/CMS'
 import CMSManagement from './pages/cms/CMSManagement'
@@ -121,6 +125,19 @@ export default function App() {
       console.log('💬 Contact message updated:', data)
     })
     
+    // Subscribe to WhatsApp subscription updates
+    socketService.subscribe('update', (data: any) => {
+      if (data.type === 'whatsapp-subscription') {
+        console.log('📱 New WhatsApp subscription:', data.data)
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('New WhatsApp Subscription!', {
+            body: data.data.message || `New subscription: ${data.data.subscription?.phone}`,
+            icon: '/favicon.ico'
+          })
+        }
+      }
+    })
+    
     // Ask for notification permission
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
@@ -133,6 +150,7 @@ export default function App() {
 
   return (
     <AuthProvider>
+      <ToastProvider>
       <Routes>
         <Route path="/admin/login" element={<LoginPage />} />
         <Route path="/admin" element={<ProtectedRoute />}>
@@ -140,6 +158,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="products" element={<Products />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="orders/:orderNumber" element={<OrderDetails />} />
             <Route path="invoices" element={<Invoice />} />
             <Route path="invoice-settings" element={<InvoiceSettings />} />
             <Route path="shipments" element={<Shipments />} />
@@ -152,12 +171,17 @@ export default function App() {
             <Route path="payment" element={<Payment />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="marketing" element={<Marketing />} />
+            <Route path="whatsapp-subscriptions" element={<WhatsAppSubscriptions />} />
             <Route path="discounts" element={<Discounts />} />
             <Route path="facebook" element={<FacebookInstagram />} />
             <Route path="store" element={<OnlineStore />} />
             <Route path="google" element={<GoogleYouTube />} />
             <Route path="forms" element={<Forms />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="system/alerts" element={<Can role="admin"><AlertSettings /></Can>} />
+            <Route path="system/staff" element={<Can role="admin"><Staff /></Can>} />
+            <Route path="system/roles" element={<Can role="admin"><RolesPermissions /></Can>} />
+            <Route path="system/audit-logs" element={<Can role="admin"><AuditLogs /></Can>} />
             
             {/* New User Management Routes */}
             <Route path="user-profiles" element={<UserProfiles />} />
@@ -172,6 +196,7 @@ export default function App() {
             {/* New Content Management Routes */}
             <Route path="static-pages" element={<StaticPagesManagement />} />
             <Route path="community-management" element={<CommunityManagement />} />
+            <Route path="homepage-layout" element={<HomepageLayoutManager />} />
             
             {/* New E-commerce Management Routes */}
             <Route path="cart-checkout" element={<CartCheckoutManagement />} />
@@ -204,14 +229,15 @@ export default function App() {
             {/* Phase 1-4 New Routes */}
             <Route path="product-variants" element={<ProductVariants />} />
             <Route path="inventory" element={<InventoryManagement />} />
-            <Route path="marketplaces" element={<MarketplaceIntegrations />} />
+            <Route path="marketplaces" element={<Can role="admin"><MarketplaceIntegrations /></Can>} />
             <Route path="warehouses" element={<Warehouses />} />
-            <Route path="pos" element={<POSSystem />} />
+            <Route path="pos" element={<Can anyOf={["pos:read","pos:update"]}><POSSystem /></Can>} />
             <Route path="fb-shop" element={<FBShopIntegration />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
+      </ToastProvider>
     </AuthProvider>
   )
 }

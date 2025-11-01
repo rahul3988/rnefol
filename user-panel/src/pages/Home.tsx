@@ -1,42 +1,136 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Heart, Star, ShoppingCart, Play, Volume2, VolumeX, Sparkles, Zap, Crown, Gift } from 'lucide-react'
-import { useCart } from '../contexts/CartContext'
-import { useWishlist } from '../contexts/WishlistContext'
+import { Star, Sparkles, Crown, Gift, ChevronDown } from 'lucide-react'
 import { api } from '../services/api'
 import SubscriptionModal from '../components/SubscriptionModal'
-import PricingDisplay from '../components/PricingDisplay'
+import ScrollReveal from '../components/ScrollReveal'
+import CountUp from '../components/CountUp'
+import { smoothScrollTo } from '../components/SmoothScroll'
 
 export default function Home() {
   const { user, isAuthenticated } = useAuth()
-  const { addItem } = useCart()
-  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist()
   const [products, setProducts] = useState<any[]>([])
   const [videos, setVideos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
   const [loyaltyPoints, setLoyaltyPoints] = useState(0)
   const [cashbackBalance, setCashbackBalance] = useState(0)
   const [activeDiscounts, setActiveDiscounts] = useState<any[]>([])
   const [personalizedContent, setPersonalizedContent] = useState<any>(null)
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0)
   const [isMuted, setIsMuted] = useState(true)
-  const [currentComboIndex, setCurrentComboIndex] = useState(0)
-  const [activeShopTab, setActiveShopTab] = useState('NEW ARRIVALS')
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
-
-  // Hero slideshow images (rotate every 3 seconds)
-  const heroImages = [
+  
+  // Hero Banner from CMS
+  const [heroImages, setHeroImages] = useState<string[]>([
     '/IMAGES/BANNER (1).jpg',
     '/IMAGES/BANNER (2).jpg',
     '/IMAGES/BANNER (3).jpg'
-  ]
+  ])
+  const [heroSettings, setHeroSettings] = useState<any>({
+    animationType: 'fade',
+    transitionDuration: 1000,
+    autoPlay: true,
+    autoPlayDelay: 7000,
+    designStyle: 'modern',
+    showDots: true,
+    showArrows: true,
+    loop: true
+  })
   const [heroIndex, setHeroIndex] = useState(0)
+
+  const highlightSections: {
+    title: string
+    description: string
+    cta: string
+    hash: string
+    icon: React.ElementType
+    gradient: string
+  }[] = [
+    {
+      title: 'Exclusive Offers',
+      description: 'Limited-time bundles and reward drops curated just for your skincare ritual.',
+      cta: 'View Offers',
+      hash: '#/user/offers',
+      icon: Gift,
+      gradient: 'from-rose-100 via-amber-50 to-white'
+    },
+    {
+      title: 'Fresh New Arrivals',
+      description: 'Discover the latest launches crafted with botanicals your skin will love.',
+      cta: 'Explore New Arrivals',
+      hash: '#/user/new-arrivals',
+      icon: Sparkles,
+      gradient: 'from-blue-100 via-indigo-50 to-white'
+    },
+    {
+      title: 'Bestselling Heroes',
+      description: 'Shop customer favourites and our most celebrated complexion heroes.',
+      cta: 'Shop Best Sellers',
+      hash: '#/user/best-sellers',
+      icon: Crown,
+      gradient: 'from-emerald-100 via-teal-50 to-white'
+    }
+  ]
+
+  // Fetch Hero Banner from CMS
+  const fetchHeroBanner = async () => {
+    try {
+      const apiBase = import.meta.env.DEV 
+        ? 'http://192.168.1.66:4000'
+        : `${window.location.protocol}//${window.location.hostname}:4000`
+      const response = await fetch(`${apiBase}/api/cms/sections/home`)
+      if (response.ok) {
+        const sections = await response.json()
+        const heroSection = sections.find((s: any) => s.section_type === 'hero_banner')
+        
+        if (heroSection && heroSection.content) {
+          const content = heroSection.content
+          
+          // Get images/videos array
+          if (content.images && Array.isArray(content.images) && content.images.length > 0) {
+            // Convert relative URLs to absolute if needed
+            const normalizeUrl = (url: string) => {
+              if (!url) return ''
+              if (/^https?:\/\//i.test(url)) return url
+              if (url.startsWith('/')) {
+                return `${apiBase}${url}`
+              }
+              return `${apiBase}/${url}`
+            }
+            
+            const normalizedImages = content.images.map(normalizeUrl)
+            setHeroImages(normalizedImages)
+          }
+          
+          // Get settings
+          if (content.settings) {
+            setHeroSettings(content.settings)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch hero banner from CMS:', error)
+      // Keep default images on error
+    }
+  }
+
+  // Auto-rotate hero images/videos
   useEffect(() => {
+    if (heroImages.length === 0) return
+    
+    if (!heroSettings.autoPlay) return
+    
     const id = window.setInterval(() => {
-      setHeroIndex((prev) => (prev + 1) % heroImages.length)
-    }, 7000)
+      setHeroIndex((prev) => {
+        if (heroSettings.loop) {
+          return (prev + 1) % heroImages.length
+        } else {
+          return prev < heroImages.length - 1 ? prev + 1 : prev
+        }
+      })
+    }, heroSettings.autoPlayDelay || 7000)
+    
     return () => window.clearInterval(id)
-  }, [])
+  }, [heroImages.length, heroSettings.autoPlay, heroSettings.autoPlayDelay, heroSettings.loop])
 
   // Subscription modal (appears 5s after landing, only if not dismissed before)
   useEffect(() => {
@@ -52,10 +146,46 @@ export default function Home() {
     localStorage.setItem('nefol-subscription-dismissed', 'true')
   }
 
+  const [cmsSections, setCmsSections] = useState<any[]>([])
+
+  // Fetch all CMS sections for homepage
+  const fetchCMSSections = async () => {
+    try {
+      const apiBase = import.meta.env.DEV 
+        ? 'http://192.168.1.66:4000'
+        : `${window.location.protocol}//${window.location.hostname}:4000`
+      const response = await fetch(`${apiBase}/api/cms/sections/home`)
+      if (response.ok) {
+        const sections = await response.json()
+        setCmsSections(sections)
+      }
+    } catch (error) {
+      console.error('Failed to fetch CMS sections:', error)
+    }
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchVideos()
+    fetchHeroBanner()
+    fetchCMSSections()
   }, []) // Only run once on mount
+
+  // Listen for product updates and refresh
+  useEffect(() => {
+    const handleProductUpdate = () => {
+      console.log('🔄 Product updated, refreshing home page products')
+      fetchProducts()
+    }
+
+    window.addEventListener('product-updated', handleProductUpdate)
+    window.addEventListener('refresh-products', handleProductUpdate)
+
+    return () => {
+      window.removeEventListener('product-updated', handleProductUpdate)
+      window.removeEventListener('refresh-products', handleProductUpdate)
+    }
+  }, [])
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -72,8 +202,6 @@ export default function Home() {
       setProducts(data)
     } catch (error) {
       console.error('Failed to fetch products:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -137,80 +265,6 @@ export default function Home() {
     window.location.hash = '#/user/combos'
   }
 
-  const handleAddToCart = (product: any) => {
-    addItem(product, 1)
-  }
-
-  const handleBuyNow = (product: any) => {
-    addItem(product, 1)
-    window.location.hash = '#/user/cart'
-  }
-
-  const handleAddToWishlist = async (product: any) => {
-    try {
-      if (isAuthenticated) {
-        await addToWishlist(product.id)
-        console.log('Added to wishlist:', product.title)
-      } else {
-        // Redirect to login if not authenticated
-        window.location.hash = '#/user/login'
-      }
-    } catch (error: any) {
-      console.error('Failed to add to wishlist:', error)
-      if (error.message.includes('already in wishlist')) {
-        // Item is already in wishlist, remove it
-        try {
-          await removeFromWishlist(product.id)
-          console.log('Removed from wishlist:', product.title)
-        } catch (removeError) {
-          console.error('Failed to remove from wishlist:', removeError)
-        }
-      }
-    }
-  }
-
-  const handleVideoClick = (video: any) => {
-    if (video.redirect_url) {
-      window.open(video.redirect_url, '_blank')
-    }
-  }
-
-  // Helper functions for SHOP WHAT'S NEW section
-  const getNewArrivals = () => {
-    return products
-      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-      .slice(0, 3)
-  }
-
-  const getBestSellers = () => {
-    // For now, we'll use products with highest IDs as best sellers
-    // In a real app, this would be based on actual sales data
-    return products
-      .sort((a, b) => (b.id || 0) - (a.id || 0))
-      .slice(0, 3)
-  }
-
-  const getTopRated = () => {
-    // For now, we'll use products with highest IDs as top rated
-    // In a real app, this would be based on actual ratings data
-    return products
-      .sort((a, b) => (b.id || 0) - (a.id || 0))
-      .slice(0, 3)
-  }
-
-  const getCurrentShopProducts = () => {
-    switch (activeShopTab) {
-      case 'NEW ARRIVALS':
-        return getNewArrivals()
-      case 'BEST SELLERS':
-        return getBestSellers()
-      case 'TOP RATED':
-        return getTopRated()
-      default:
-        return getNewArrivals()
-    }
-  }
-
   // Dynamically scale videos in the social carousel: center = large, sides = medium/small
   useEffect(() => {
     const scroller = document.getElementById('video-scroller') as HTMLElement | null
@@ -246,40 +300,256 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-x-hidden" style={{backgroundColor: '#F4F9F9'}}>
-      {/* Hero Banner Section - Enhanced Colors */}
-      <section className="relative py-8 sm:py-12 md:py-16 lg:py-20" style={{background: 'linear-gradient(135deg, #4B97C9 0%, #D0E8F2 50%, #9DB4C0 100%)'}}>
+      {/* Hero Banner Section - Enhanced Colors with Animations */}
+      <section 
+        id="hero" 
+        className="relative py-8 sm:py-12 md:py-16 lg:py-20" 
+        style={{background: 'linear-gradient(135deg, #4B97C9 0%, #D0E8F2 50%, #9DB4C0 100%)'}}
+      >
         <div className="mx-auto max-w-7xl px-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 md:gap-12 items-center">
-            <div className="text-left order-2 lg:order-1">
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-serif mb-3 sm:mb-4 md:mb-6 text-white">
-                ELEVATE YOUR SKIN WITH
-              </h1>
-              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-serif font-bold mb-3 sm:mb-4 md:mb-6 text-white">
-                NATURAL BEAUTY
-              </h2>
-              <p className="text-sm sm:text-base md:text-lg mb-4 sm:mb-6 md:mb-8 font-light text-white">
-                infused with premium natural ingredients
-              </p>
-              <button
-                onClick={handleExploreCollection}
-                className="px-4 sm:px-6 md:px-8 py-3 sm:py-3.5 md:py-4 text-white font-medium transition-all duration-300 text-xs sm:text-sm tracking-wide uppercase shadow-lg"
-                style={{backgroundColor: '#1B4965'}}
-              >
-                SHOP NOW
-              </button>
-            </div>
-            <div className="relative order-1 lg:order-2">
-              <div className="relative z-10">
-                <img 
-                  src={heroImages[heroIndex]} 
-                  alt="Nefol Hero"
-                  className="w-full h-48 sm:h-64 md:h-80 lg:h-96 object-cover rounded-lg shadow-2xl"
-                />
-                <div className="absolute -top-2 -right-2 sm:-top-4 sm:-right-4 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center shadow-lg" style={{backgroundColor: '#1B4965'}}>
-                  <span className="text-white text-xs sm:text-sm font-bold">NEW</span>
+            <ScrollReveal animationType="fade-right" delay={0}>
+              <div className="text-left order-2 lg:order-1">
+                <h1 
+                  className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-serif mb-3 sm:mb-4 md:mb-6 text-white"
+                  data-aos="fade-right"
+                  data-aos-duration="800"
+                >
+                  ELEVATE YOUR SKIN WITH
+                </h1>
+                <h2 
+                  className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-serif font-bold mb-3 sm:mb-4 md:mb-6 text-white"
+                  data-aos="fade-right"
+                  data-aos-delay="100"
+                  data-aos-duration="800"
+                >
+                  NATURAL BEAUTY
+                </h2>
+                <p 
+                  className="text-sm sm:text-base md:text-lg mb-4 sm:mb-6 md:mb-8 font-light text-white"
+                  data-aos="fade-right"
+                  data-aos-delay="200"
+                  data-aos-duration="800"
+                >
+                  infused with premium natural ingredients
+                </p>
+                <div
+                  data-aos="fade-right"
+                  data-aos-delay="300"
+                  data-aos-duration="800"
+                >
+                  <button
+                    onClick={handleExploreCollection}
+                    className="px-4 sm:px-6 md:px-8 py-3 sm:py-3.5 md:py-4 text-white font-medium transition-all duration-300 text-xs sm:text-sm tracking-wide uppercase shadow-lg hover:scale-105 hover:shadow-xl"
+                    style={{backgroundColor: '#1B4965'}}
+                  >
+                    SHOP NOW
+                  </button>
                 </div>
               </div>
+            </ScrollReveal>
+            <ScrollReveal animationType="fade-left" delay={100}>
+              <div className="relative order-1 lg:order-2">
+                <div className="relative z-10">
+                  {heroImages.length > 0 && heroImages[heroIndex] && (
+                    <>
+                      {/\.(mp4|webm|ogg|mov|avi)(\?|$)/i.test(heroImages[heroIndex]) ? (
+                        <video
+                          src={heroImages[heroIndex]}
+                          className="w-full h-48 sm:h-64 md:h-80 lg:h-96 object-cover rounded-lg shadow-2xl"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <img 
+                          src={heroImages[heroIndex]} 
+                          alt="Nefol Hero"
+                          className="w-full h-48 sm:h-64 md:h-80 lg:h-96 object-cover rounded-lg shadow-2xl transition-opacity duration-1000 ease-in-out"
+                          key={heroIndex}
+                          style={{
+                            opacity: 1,
+                            transition: `opacity ${heroSettings.transitionDuration || 1000}ms ease-in-out`,
+                          }}
+                        />
+                      )}
+                      
+                      {/* Navigation Dots */}
+                      {heroSettings.showDots && heroImages.length > 1 && (
+                        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-20">
+                          {heroImages.map((_, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setHeroIndex(idx)}
+                              className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                                idx === heroIndex ? 'bg-white w-6' : 'bg-white/50 hover:bg-white/75'
+                              }`}
+                              aria-label={`Go to slide ${idx + 1}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Arrow Buttons */}
+                      {heroSettings.showArrows && heroImages.length > 1 && (
+                        <>
+                          <button
+                            onClick={() => {
+                              if (heroSettings.loop) {
+                                setHeroIndex((prev) => (prev - 1 + heroImages.length) % heroImages.length)
+                              } else {
+                                setHeroIndex((prev) => Math.max(0, prev - 1))
+                              }
+                            }}
+                            className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 transition-all duration-300 hover:scale-110 z-20"
+                            aria-label="Previous slide"
+                          >
+                            ←
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (heroSettings.loop) {
+                                setHeroIndex((prev) => (prev + 1) % heroImages.length)
+                              } else {
+                                setHeroIndex((prev) => Math.min(heroImages.length - 1, prev + 1))
+                              }
+                            }}
+                            className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 transition-all duration-300 hover:scale-110 z-20"
+                            aria-label="Next slide"
+                          >
+                            →
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+                  <div 
+                    className="absolute -top-2 -right-2 sm:-top-4 sm:-right-4 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center shadow-lg animate-pulse"
+                    style={{backgroundColor: '#1B4965'}}
+                    data-aos="zoom-in"
+                    data-aos-delay="400"
+                  >
+                    <span className="text-white text-xs sm:text-sm font-bold">NEW</span>
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+          </div>
+          
+          {/* Smooth Scroll Arrow */}
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce">
+            <button
+              onClick={() => smoothScrollTo('highlights', 80)}
+              className="text-white hover:text-gray-200 transition-colors duration-300"
+              aria-label="Scroll down"
+            >
+              <ChevronDown className="w-8 h-8" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Highlights - Offers, New Arrivals, Best Sellers */}
+      <section id="highlights" className="py-8 sm:py-12 md:py-16" style={{backgroundColor: '#F8FAFC'}}>
+        <div className="mx-auto max-w-7xl px-4">
+          <ScrollReveal animationType="fade-up" delay={0}>
+            <div className="text-center mb-6 sm:mb-8 md:mb-12">
+              <h2 
+                className="text-xl sm:text-2xl md:text-3xl font-serif mb-3" 
+                style={{color: '#1B4965'}}
+                data-aos="fade-up"
+                data-aos-duration="800"
+              >
+                EXPLORE NEFOL HIGHLIGHTS
+              </h2>
+              <p 
+                className="mx-auto max-w-2xl text-sm sm:text-base text-slate-600"
+                data-aos="fade-up"
+                data-aos-delay="100"
+                data-aos-duration="800"
+              >
+                Jump straight into exclusive offers, the freshest arrivals, and crowd-favourite essentials curated for you.
+              </p>
             </div>
+          </ScrollReveal>
+
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 md:gap-8 md:grid-cols-3">
+            {highlightSections.map((section, index) => {
+              const Icon = section.icon
+              return (
+                <ScrollReveal 
+                  key={section.title} 
+                  animationType="fade-up" 
+                  delay={index * 100}
+                >
+                  <button
+                    type="button"
+                    onClick={() => (window.location.hash = section.hash)}
+                    className={`group relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br ${section.gradient} p-6 sm:p-8 text-left shadow-lg transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400`}
+                    data-aos="fade-up"
+                    data-aos-delay={index * 100}
+                    data-aos-duration="800"
+                  >
+                    <div className="mb-6 inline-flex items-center justify-center rounded-full bg-white/80 p-3 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <Icon className="h-6 w-6 text-slate-800" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-semibold tracking-wide" style={{color: '#1B4965'}}>
+                      {section.title}
+                    </h3>
+                    <p className="mt-3 text-sm sm:text-base text-slate-600">
+                      {section.description}
+                    </p>
+                    <span className="mt-6 inline-flex items-center text-sm font-semibold uppercase tracking-wide text-slate-900">
+                      {section.cta}
+                      <span className="ml-2 transition-transform duration-200 group-hover:translate-x-2">→</span>
+                    </span>
+                  </button>
+                </ScrollReveal>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Statistics Section - Natura Bissé Style */}
+      <section className="py-16" style={{backgroundColor: '#F4F9F9'}}>
+        <div className="mx-auto max-w-7xl px-4">
+          <ScrollReveal animationType="fade-up" delay={0}>
+            <div className="text-center mb-12">
+              <h2 
+                className="text-2xl sm:text-3xl md:text-4xl font-serif mb-4" 
+                style={{color: '#1B4965'}}
+                data-aos="fade-up"
+              >
+                THE MOST INTELLIGENT ANTI-AGING SKINCARE
+              </h2>
+            </div>
+          </ScrollReveal>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
+            {[
+              { label: 'More Hydrated & Supple', value: 49, description: 'Users report significantly improved skin hydration' },
+              { label: 'More Firmness & Luminosity', value: 48, description: 'Enhanced skin firmness and natural glow' },
+              { label: 'Fewer Wrinkles & Lines', value: 49, description: 'Visible reduction in fine lines and wrinkles' }
+            ].map((stat, index) => (
+              <ScrollReveal key={index} animationType="zoom" delay={index * 150}>
+                <div 
+                  className="text-center p-8 rounded-2xl bg-white shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-2"
+                  data-aos="zoom-in"
+                  data-aos-delay={index * 150}
+                >
+                  <div className="text-5xl sm:text-6xl md:text-7xl font-bold mb-4" style={{color: '#4B97C9'}}>
+                    <CountUp end={stat.value} suffix="%" duration={2000} startOnView={true} />
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-semibold mb-2" style={{color: '#1B4965'}}>
+                    {stat.label}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {stat.description}
+                  </p>
+                </div>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
       </section>
@@ -287,33 +557,52 @@ export default function Home() {
       {/* Shop by Category - Enhanced Colors */}
       <section className="py-8 sm:py-12 md:py-16" style={{backgroundColor: '#D0E8F2'}}>
         <div className="mx-auto max-w-7xl px-4">
-          <div className="text-center mb-6 sm:mb-8 md:mb-12">
-            <h2 className="text-xl sm:text-2xl md:text-3xl font-serif mb-2 sm:mb-3 md:mb-4" style={{color: '#1B4965'}}>
-              SHOP BY CATEGORY
-            </h2>
-          </div>
+          <ScrollReveal animationType="fade-up" delay={0}>
+            <div className="text-center mb-6 sm:mb-8 md:mb-12">
+              <h2 
+                className="text-xl sm:text-2xl md:text-3xl font-serif mb-2 sm:mb-3 md:mb-4" 
+                style={{color: '#1B4965'}}
+                data-aos="fade-up"
+              >
+                SHOP BY CATEGORY
+              </h2>
+            </div>
+          </ScrollReveal>
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 md:gap-8">
             {/* Body */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/body'}>
-              <div
-                className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
-                style={{
-                  WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
-                  maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
-                }}
+            <ScrollReveal animationType="zoom" delay={0}>
+              <div 
+                className="text-center group cursor-pointer transform transition-all duration-500 hover:scale-110" 
+                onClick={() => window.location.hash = '#/user/body'}
+                data-aos="zoom-in"
+                data-aos-delay="0"
               >
-                <img
-                  src="/IMAGES/body.jpg"
-                  alt="Body"
-                  className="block w-full h-full object-contain"
-                  style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
-                />
+                <div
+                  className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
+                  style={{
+                    WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)',
+                    maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%)'
+                  }}
+                >
+                  <img
+                    src="/IMAGES/body.jpg"
+                    alt="Body"
+                    className="block w-full h-full object-contain"
+                    style={{ filter: 'drop-shadow(0 24px 30px rgba(0,0,0,0.28))' }}
+                  />
+                </div>
+                <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Body</h3>
               </div>
-              <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Body</h3>
-            </div>
+            </ScrollReveal>
 
             {/* Face */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/face'}>
+            <ScrollReveal animationType="zoom" delay={100}>
+              <div 
+                className="text-center group cursor-pointer transform transition-all duration-500 hover:scale-110" 
+                onClick={() => window.location.hash = '#/user/face'}
+                data-aos="zoom-in"
+                data-aos-delay="100"
+              >
               <div
                 className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
@@ -329,10 +618,17 @@ export default function Home() {
                 />
               </div>
               <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Face</h3>
-            </div>
+              </div>
+            </ScrollReveal>
 
             {/* Hair */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/hair'}>
+            <ScrollReveal animationType="zoom" delay={200}>
+              <div 
+                className="text-center group cursor-pointer transform transition-all duration-500 hover:scale-110" 
+                onClick={() => window.location.hash = '#/user/hair'}
+                data-aos="zoom-in"
+                data-aos-delay="200"
+              >
               <div
                 className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
@@ -348,10 +644,17 @@ export default function Home() {
                 />
               </div>
               <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Hair</h3>
-            </div>
+              </div>
+            </ScrollReveal>
 
             {/* Combos */}
-            <div className="text-center group cursor-pointer" onClick={() => window.location.hash = '#/user/combos'}>
+            <ScrollReveal animationType="zoom" delay={300}>
+              <div 
+                className="text-center group cursor-pointer transform transition-all duration-500 hover:scale-110" 
+                onClick={() => window.location.hash = '#/user/combos'}
+                data-aos="zoom-in"
+                data-aos-delay="300"
+              >
               <div
                 className="mx-auto mb-2 sm:mb-3 md:mb-4 flex items-center justify-center w-full max-w-[180px] sm:max-w-[220px] md:max-w-[280px] lg:max-w-[360px] aspect-square"
                 style={{
@@ -367,145 +670,9 @@ export default function Home() {
                 />
               </div>
               <h3 className="text-xs sm:text-sm font-medium tracking-wide" style={{color: '#1B4965'}}>Combos</h3>
-            </div>
+              </div>
+            </ScrollReveal>
           </div>
-        </div>
-      </section>
-
-      {/* Shop What's New - Enhanced Colors */}
-      <section className="py-16" style={{backgroundColor: '#F4F9F9'}}>
-        <div className="mx-auto max-w-7xl px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-serif mb-4" style={{color: '#1B4965'}}>
-              SHOP WHAT'S NEW
-            </h2>
-            <div className="flex justify-center space-x-8 mb-8">
-              <button 
-                onClick={() => setActiveShopTab('NEW ARRIVALS')}
-                className="text-sm font-medium tracking-wide uppercase pb-2 border-b-2" 
-                style={{
-                  color: activeShopTab === 'NEW ARRIVALS' ? '#1B4965' : '#9DB4C0',
-                  borderColor: activeShopTab === 'NEW ARRIVALS' ? '#4B97C9' : 'transparent'
-                }}
-              >
-                NEW ARRIVALS
-              </button>
-              <button 
-                onClick={() => setActiveShopTab('BEST SELLERS')}
-                className="text-sm font-medium tracking-wide uppercase pb-2 border-b-2" 
-                style={{
-                  color: activeShopTab === 'BEST SELLERS' ? '#1B4965' : '#9DB4C0',
-                  borderColor: activeShopTab === 'BEST SELLERS' ? '#4B97C9' : 'transparent'
-                }}
-              >
-                BEST SELLERS
-              </button>
-              <button 
-                onClick={() => setActiveShopTab('TOP RATED')}
-                className="text-sm font-medium tracking-wide uppercase pb-2 border-b-2" 
-                style={{
-                  color: activeShopTab === 'TOP RATED' ? '#1B4965' : '#9DB4C0',
-                  borderColor: activeShopTab === 'TOP RATED' ? '#4B97C9' : 'transparent'
-                }}
-              >
-                TOP RATED
-              </button>
-            </div>
-        </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="bg-white rounded-lg shadow-sm">
-                  <div className="h-48 sm:h-64 md:h-80 rounded-t-lg" style={{backgroundColor: '#D0E8F2'}}></div>
-                  <div className="p-4 sm:p-6">
-                    <div className="h-6 mb-2" style={{backgroundColor: '#9DB4C0'}}></div>
-                    <div className="h-4 mb-4" style={{backgroundColor: '#9DB4C0'}}></div>
-                    <div className="h-8" style={{backgroundColor: '#9DB4C0'}}></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-              {products.slice(0, 6).map((product, index) => {
-                return (
-                  <div key={product.slug} className="bg-white rounded-lg shadow-sm group cursor-pointer flex flex-col" onClick={() => window.location.hash = `#/user/product/${product.slug}`}>
-                    <div className="relative overflow-hidden rounded-t-lg">
-                      <img 
-                        src={product.listImage || product.list_image || '/IMAGES/default-product.jpg'} 
-                        alt={product.title}
-                        className="w-full h-48 sm:h-64 md:h-80 object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleAddToWishlist(product)
-                          }}
-                          className="w-10 h-10 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg"
-                        >
-                          <Heart className="w-5 h-5" style={{color: '#1B4965'}} />
-                        </button>
-                      </div>
-                      <div className="absolute top-4 left-4">
-                        <span className="text-white px-3 py-1 text-xs font-medium tracking-wide uppercase rounded-full" style={{backgroundColor: '#4B97C9'}}>
-                          {product.category || 'NEFOL'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="p-4 sm:p-6 flex flex-col h-full">
-                      <h3 className="text-base sm:text-lg font-medium tracking-wide mb-2 line-clamp-2" style={{color: '#1B4965'}}>
-                        {product.title}
-                      </h3>
-                      <div className="flex items-center mb-2">
-                        <div className="flex text-yellow-400">
-                          <Star className="w-4 h-4 fill-current" />
-                          <Star className="w-4 h-4 fill-current" />
-                          <Star className="w-4 h-4 fill-current" />
-                          <Star className="w-4 h-4 fill-current" />
-                          <Star className="w-4 h-4 fill-current" />
-                        </div>
-                        <span className="text-sm ml-2" style={{color: '#9DB4C0'}}>4.5 (45 Reviews)</span>
-                      </div>
-                      <div className="mt-auto pt-2">
-                        <div className="flex flex-col w-full">
-                          <div className="flex items-center gap-2 mb-2">
-                            <PricingDisplay 
-                              product={product} 
-                              csvProduct={product.csvProduct}
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleAddToCart(product)
-                              }}
-                              className="flex-1 px-2 sm:px-3 py-2 text-white text-xs sm:text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
-                              style={{backgroundColor: '#4B97C9', minHeight: '44px'}}
-                            >
-                              ADD TO CART
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleBuyNow(product)
-                              }}
-                              className="flex-1 px-2 sm:px-3 py-2 text-white text-xs sm:text-xs font-medium transition-all duration-300 tracking-wide uppercase rounded shadow-lg"
-                              style={{backgroundColor: '#1B4965', minHeight: '44px'}}
-                            >
-                              BUY NOW
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
         </div>
       </section>
 
@@ -522,50 +689,55 @@ export default function Home() {
           </div>
 
           {/* Static certifications grid */}
-          <div className="flex flex-wrap justify-center items-center gap-8">
-            <div className="text-center">
-              <div className="w-48 h-36 mx-auto mb-4 flex items-center justify-center">
-                <img 
-                  src="/IMAGES/cruielty.jpg" 
-                  alt="Cruelty-Free"
-                  className="w-full h-full object-contain"
-                />
+          <style>{`
+            .commitment-scroll::-webkit-scrollbar { display: none; }
+          `}</style>
+          <div className="commitment-scroll -mx-4 overflow-x-auto pb-2 sm:mx-0" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex flex-nowrap items-center justify-start md:justify-center gap-6 md:gap-8 px-4 sm:px-0" style={{ msOverflowStyle: 'none' }}>
+              <div className="text-center flex-shrink-0">
+                <div className="w-40 sm:w-48 h-32 sm:h-36 mx-auto mb-4 flex items-center justify-center">
+                  <img 
+                    src="/IMAGES/cruielty.jpg" 
+                    alt="Cruelty-Free"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="w-48 h-36 mx-auto mb-4 flex items-center justify-center">
-                <img 
-                  src="/IMAGES/paraben.jpg" 
-                  alt="Paraben-Free"
-                  className="w-full h-full object-contain"
-                />
+              <div className="text-center flex-shrink-0">
+                <div className="w-40 sm:w-48 h-32 sm:h-36 mx-auto mb-4 flex items-center justify-center">
+                  <img 
+                    src="/IMAGES/paraben.jpg" 
+                    alt="Paraben-Free"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="w-48 h-36 mx-auto mb-4 flex items-center justify-center">
-                <img 
-                  src="/IMAGES/india.jpg" 
-                  alt="Made in India"
-                  className="w-full h-full object-contain"
-                />
+              <div className="text-center flex-shrink-0">
+                <div className="w-40 sm:w-48 h-32 sm:h-36 mx-auto mb-4 flex items-center justify-center">
+                  <img 
+                    src="/IMAGES/india.jpg" 
+                    alt="Made in India"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="w-48 h-36 mx-auto mb-4 flex items-center justify-center">
-                <img 
-                  src="/IMAGES/chemical.jpg" 
-                  alt="Chemical-Free"
-                  className="w-full h-full object-contain"
-                />
+              <div className="text-center flex-shrink-0">
+                <div className="w-40 sm:w-48 h-32 sm:h-36 mx-auto mb-4 flex items-center justify-center">
+                  <img 
+                    src="/IMAGES/chemical.jpg" 
+                    alt="Chemical-Free"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="w-full max-w-48 h-36 mx-auto mb-4 flex items-center justify-center">
-                <img 
-                  src="/IMAGES/vegan.jpg" 
-                  alt="Vegan"
-                  className="w-full h-full object-contain"
-                />
+              <div className="text-center flex-shrink-0">
+                <div className="w-40 sm:w-48 h-32 sm:h-36 mx-auto mb-4 flex items-center justify-center">
+                  <img 
+                    src="/IMAGES/vegan.jpg" 
+                    alt="Vegan"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -720,9 +892,13 @@ export default function Home() {
             const scrollByViewport = (dir: number) => {
               const scroller = document.getElementById('video-scroller') as HTMLElement | null
               if (!scroller) return
-              const delta = (scroller.clientWidth * 0.2) * dir
+              const card = scroller.querySelector('.video-item') as HTMLElement | null
+              const cardWidth = card ? card.getBoundingClientRect().width : scroller.clientWidth
+              const styles = card ? window.getComputedStyle(card) : null
+              const marginX = styles ? parseFloat(styles.marginLeft || '0') + parseFloat(styles.marginRight || '0') : 32
+              const delta = (cardWidth + marginX) * dir
               scroller.scrollBy({ left: delta, behavior: 'smooth' })
-              window.setTimeout(() => scroller.dispatchEvent(new Event('scroll')), 120)
+              window.setTimeout(() => scroller.dispatchEvent(new Event('scroll')), 160)
               }
               
               return (
@@ -737,14 +913,14 @@ export default function Home() {
 
                 <div
                   id="video-scroller"
-                  className="flex overflow-x-hidden snap-x snap-mandatory px-4 py-4"
-                  style={{ scrollBehavior: 'smooth' }}
+                  className="flex overflow-x-auto snap-x snap-mandatory px-6 sm:px-8 lg:px-4 py-4"
+                  style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}
                 >
                   {doubled.map((src, idx) => (
                     <div
                       key={idx}
                       className="video-item snap-start shrink-0 bg-white overflow-hidden mx-2 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300"
-                      style={{ width: 'calc(20% - 16px)', transformOrigin: 'center center', transition: 'transform 200ms ease' }}
+                      style={{ width: 'clamp(260px, 70vw, 360px)', transformOrigin: 'center center', transition: 'transform 200ms ease' }}
                     >
                       <video
                         src={src}
@@ -875,6 +1051,74 @@ export default function Home() {
           </button>
         </div>
       </section>
+
+      {/* Dynamic CMS Sections (Custom Sections) */}
+      {cmsSections
+        .filter((s: any) => s.section_type.startsWith('custom_') && s.is_active)
+        .sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0))
+        .map((section: any) => {
+          const content = section.content || {}
+          const images = content.images || []
+          const normalizeUrl = (url: string) => {
+            if (!url) return ''
+            if (/^https?:\/\//i.test(url)) return url
+            const apiBase = import.meta.env.DEV 
+              ? 'http://192.168.1.66:4000'
+              : `${window.location.protocol}//${window.location.hostname}:4000`
+            if (url.startsWith('/')) {
+              return `${apiBase}${url}`
+            }
+            return `${apiBase}/${url}`
+          }
+
+          return (
+            <section key={section.id} className="py-16" style={{backgroundColor: '#F4F9F9'}}>
+              <div className="mx-auto max-w-7xl px-4">
+                {content.title && (
+                  <div className="text-center mb-12">
+                    <h2 className="text-3xl font-serif mb-4" style={{color: '#1B4965'}}>
+                      {content.title}
+                    </h2>
+                    {content.description && (
+                      <p className="text-lg font-light max-w-2xl mx-auto text-gray-600">
+                        {content.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+                
+                {images.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {images.map((imageUrl: string, index: number) => {
+                      const normalizedUrl = normalizeUrl(imageUrl)
+                      const isVideo = /\.(mp4|webm|ogg|mov|avi)(\?|$)/i.test(normalizedUrl)
+                      
+                      return (
+                        <div key={index} className="relative group">
+                          {isVideo ? (
+                            <video
+                              src={normalizedUrl}
+                              className="w-full h-64 object-cover rounded-lg shadow-lg"
+                              controls
+                              muted
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={normalizedUrl}
+                              alt={`${content.title} ${index + 1}`}
+                              className="w-full h-64 object-cover rounded-lg shadow-lg hover:shadow-xl transition-shadow"
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          )
+        })}
 
       {/* Floating Action Button - nefol Inspired */}
       <button 

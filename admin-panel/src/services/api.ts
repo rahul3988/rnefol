@@ -13,11 +13,15 @@ class ApiService {
     
     // Get auth token from localStorage
     const token = localStorage.getItem('auth_token')
+    const role = localStorage.getItem('role') || 'admin'
+    const permissions = localStorage.getItem('permissions') || 'orders:read,orders:update,shipping:read,shipping:update,invoices:read,products:update'
     
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),
+        'x-user-role': role,
+        'x-user-permissions': permissions,
         ...options.headers,
       },
       ...options,
@@ -45,6 +49,13 @@ class ApiService {
   async createLoyaltyProgram(data: any) {
     return this.request('/api/loyalty-program', {
       method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateLoyaltyProgram(id: number | string, data: any) {
+    return this.request(`/api/loyalty-program/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     })
   }
@@ -232,6 +243,18 @@ class ApiService {
     return this.request('/api/live-chat/widgets')
   }
 
+  async getLiveChatMessages(sessionId: number | string) {
+    const params = new URLSearchParams({ sessionId: String(sessionId) }).toString()
+    return this.request(`/api/live-chat/messages?${params}`)
+  }
+
+  async sendLiveChatMessage(data: { sessionId: number | string, sender: 'customer' | 'agent', senderName?: string, message: string, type?: string }) {
+    return this.request('/api/live-chat/messages', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    })
+  }
+
   // Advanced Analytics APIs
   async getAnalyticsData() {
     return this.request('/api/advanced-analytics')
@@ -250,8 +273,12 @@ class ApiService {
   }
 
   // Journey Tracking APIs
-  async getCustomerJourneys() {
-    return this.request('/api/journey-tracking')
+  async getCustomerJourneys(timeRange?: string, eventFilter?: string) {
+    const params = new URLSearchParams()
+    if (timeRange) params.append('timeRange', timeRange)
+    if (eventFilter) params.append('eventFilter', eventFilter)
+    const query = params.toString()
+    return this.request(`/api/journey-tracking${query ? `?${query}` : ''}`)
   }
 
   // Actionable Analytics APIs
@@ -287,6 +314,23 @@ class ApiService {
     return this.request('/api/customer_segments', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  async getCustomerSegmentAggregates() {
+    return this.request('/api/customer_segments/aggregate')
+  }
+
+  async updateCustomerSegment(id: string | number, data: any) {
+    return this.request(`/api/customer_segments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteCustomerSegment(id: string | number) {
+    return this.request(`/api/customer_segments/${id}`, {
+      method: 'DELETE',
     })
   }
 
@@ -362,6 +406,11 @@ class ApiService {
     return this.request('/api/customers')
   }
 
+  // Users APIs (for customer list with orders/stats)
+  async getUsers() {
+    return this.request('/api/users')
+  }
+
   // Analytics APIs (existing)
   async getAnalytics() {
     return this.request('/api/analytics')
@@ -423,27 +472,36 @@ class ApiService {
     })
   }
 
-  // Shiprocket APIs
+  // Shiprocket APIs (aligned to backend)
   async getShiprocketConfig() {
-    return this.request('/api/shiprocket-config')
+    return this.request('/api/shiprocket/config')
   }
 
   async updateShiprocketConfig(data: any) {
-    return this.request('/api/shiprocket-config', {
+    return this.request('/api/shiprocket/config', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async createShipment(data: any) {
-    return this.request('/api/shiprocket-shipment', {
+  async createShiprocketAwb(orderId: string) {
+    return this.request(`/api/shiprocket/orders/${orderId}/awb`, {
       method: 'POST',
-      body: JSON.stringify(data),
     })
   }
 
-  async getShipmentTracking(orderId: string) {
-    return this.request(`/api/shipment-tracking/${orderId}`)
+  async getShiprocketTracking(orderId: string) {
+    return this.request(`/api/shiprocket/orders/${orderId}/track`)
+  }
+
+  async checkShiprocketServiceability(params: { pickup_postcode: string, delivery_postcode: string, cod?: '0'|'1', weight?: string }) {
+    const query = new URLSearchParams({
+      pickup_postcode: params.pickup_postcode,
+      delivery_postcode: params.delivery_postcode,
+      cod: params.cod ?? '0',
+      weight: params.weight ?? '0.5',
+    }).toString()
+    return this.request(`/api/shiprocket/serviceability?${query}`)
   }
 
   // Discounts APIs

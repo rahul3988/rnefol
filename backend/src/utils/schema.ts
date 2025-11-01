@@ -112,6 +112,7 @@ export async function ensureSchema(pool: Pool) {
       id serial primary key,
       product_id integer not null references products(id) on delete cascade,
       url text not null,
+      type text default 'pdp' check (type in ('pdp', 'banner')),
       created_at timestamptz default now()
     );
     
@@ -905,6 +906,13 @@ export async function ensureSchema(pool: Pool) {
       created_at timestamptz default now(),
       updated_at timestamptz default now()
     );
+    -- Align loyalty_program with admin UI expectations
+    alter table loyalty_program add column if not exists points_per_rupee numeric(10,2) default 1;
+    alter table loyalty_program add column if not exists referral_bonus integer default 0;
+    alter table loyalty_program add column if not exists vip_threshold integer default 0;
+    alter table loyalty_program add column if not exists status text default 'active' check (status in ('active','inactive'));
+    create index if not exists idx_loyalty_program_status on loyalty_program(status);
+    create index if not exists idx_loyalty_program_created_at on loyalty_program(created_at);
     
     create table if not exists affiliate_program (
       id serial primary key,
@@ -1024,6 +1032,47 @@ export async function ensureSchema(pool: Pool) {
     create index if not exists idx_shiprocket_shipments_order on shiprocket_shipments(order_id);
     create index if not exists idx_discount_usage_discount on discount_usage(discount_id);
     create index if not exists idx_discount_usage_order on discount_usage(order_id);
+    
+    -- Ensure all discount columns exist (migration for existing tables)
+    DO $$
+    BEGIN
+      -- Add missing columns to discounts table
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'min_purchase') THEN
+        ALTER TABLE discounts ADD COLUMN min_purchase numeric(12,2);
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'max_discount') THEN
+        ALTER TABLE discounts ADD COLUMN max_discount numeric(12,2);
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'valid_from') THEN
+        ALTER TABLE discounts ADD COLUMN valid_from date;
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'valid_until') THEN
+        ALTER TABLE discounts ADD COLUMN valid_until date;
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'usage_limit') THEN
+        ALTER TABLE discounts ADD COLUMN usage_limit integer;
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'usage_count') THEN
+        ALTER TABLE discounts ADD COLUMN usage_count integer default 0;
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'is_active') THEN
+        ALTER TABLE discounts ADD COLUMN is_active boolean default true;
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'created_at') THEN
+        ALTER TABLE discounts ADD COLUMN created_at timestamptz default now();
+      END IF;
+      
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discounts' AND column_name = 'updated_at') THEN
+        ALTER TABLE discounts ADD COLUMN updated_at timestamptz default now();
+      END IF;
+    END $$;
     
     -- Phase 2: Marketplaces & Staff Permissions
     create table if not exists marketplace_accounts (
@@ -1190,7 +1239,12 @@ export async function ensureSchema(pool: Pool) {
     create index if not exists idx_admin_notifications_type on admin_notifications(notification_type);
     create index if not exists idx_admin_notifications_created_at on admin_notifications(created_at);
   `)
-  
+
+  // Ensure 'slug' column exists on products for older databases
+  await pool.query(`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS slug text;
+  `)
+
   // Add unique constraint on products slug (safely)
   await pool.query(`
     DO $$ 
@@ -1380,7 +1434,151 @@ export async function ensureSchema(pool: Pool) {
       created_at timestamptz default now(),
       updated_at timestamptz default now()
     );
+    
+    -- Recently Viewed Products
+    create table if not exists recently_viewed_products (
+      id serial primary key,
+      user_id integer references users(id) on delete cascade,
+      product_id integer references products(id) on delete cascade,
+      viewed_at timestamptz default now(),
+      session_id text,
+      CHECK ((user_id IS NOT NULL) OR (session_id IS NOT NULL))
+    );
+    
+    -- Product Recommendations
+    create table if not exists product_recommendations (
+      id serial primary key,
+      user_id integer references users(id) on delete cascade,
+      product_id integer references products(id) on delete cascade,
+      recommended_product_id integer references products(id) on delete cascade,
+      recommendation_type text not null check (recommendation_type in ('related', 'frequently_bought', 'based_on_browsing', 'trending', 'similar_category')),
+      score numeric(5,2) default 0,
+      created_at timestamptz default now()
+    );
+    
+    -- Newsletter Subscriptions (Email)
+    create table if not exists newsletter_subscriptions (
+      id serial primary key,
+      email text not null unique,
+      name text,
+      subscribed_at timestamptz default now(),
+      unsubscribed_at timestamptz,
+      is_active boolean default true,
+      source text,
+      metadata jsonb,
+      verification_token text,
+      verified_at timestamptz
+    );
+    
+    -- WhatsApp Subscriptions
+    create table if not exists whatsapp_subscriptions (
+      id serial primary key,
+      phone text not null unique,
+      name text,
+      subscribed_at timestamptz default now(),
+      unsubscribed_at timestamptz,
+      is_active boolean default true,
+      source text,
+      metadata jsonb,
+      verification_code text,
+      verified_at timestamptz
+    );
+    
+    -- User Search History (for recommendations)
+    create table if not exists user_search_history (
+      id serial primary key,
+      user_id integer references users(id) on delete cascade,
+      search_query text not null,
+      results_count integer default 0,
+      session_id text,
+      searched_at timestamptz default now()
+    );
+    
+    -- Product Views Tracking (for trending products)
+    create table if not exists product_views (
+      id serial primary key,
+      product_id integer references products(id) on delete cascade,
+      user_id integer references users(id) on delete set null,
+      session_id text,
+      viewed_at timestamptz default now(),
+      view_duration integer,
+      source text
+    );
+  `)
+  
+  // Ensure columns exist for recently_viewed_products (migration for existing tables)
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'recently_viewed_products') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recently_viewed_products' AND column_name = 'viewed_at') THEN
+          ALTER TABLE recently_viewed_products ADD COLUMN viewed_at timestamptz default now();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recently_viewed_products' AND column_name = 'session_id') THEN
+          ALTER TABLE recently_viewed_products ADD COLUMN session_id text;
+        END IF;
+      END IF;
+      
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'product_views') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'product_views' AND column_name = 'viewed_at') THEN
+          ALTER TABLE product_views ADD COLUMN viewed_at timestamptz default now();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'product_views' AND column_name = 'view_duration') THEN
+          ALTER TABLE product_views ADD COLUMN view_duration integer;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'product_views' AND column_name = 'source') THEN
+          ALTER TABLE product_views ADD COLUMN source text;
+        END IF;
+      END IF;
+      
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'user_search_history') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_search_history' AND column_name = 'searched_at') THEN
+          ALTER TABLE user_search_history ADD COLUMN searched_at timestamptz default now();
+        END IF;
+      END IF;
+    END $$;
+  `)
+
+  // Create all indexes after all tables are created and columns are ensured
+  await pool.query(`
+    -- Indexes for product_recommendations
+    CREATE INDEX IF NOT EXISTS idx_recommendations_user ON product_recommendations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_recommendations_product ON product_recommendations(product_id);
+    CREATE INDEX IF NOT EXISTS idx_recommendations_type ON product_recommendations(recommendation_type);
+    
+    -- Indexes for newsletter_subscriptions
+    CREATE INDEX IF NOT EXISTS idx_newsletter_email ON newsletter_subscriptions(email);
+    CREATE INDEX IF NOT EXISTS idx_newsletter_active ON newsletter_subscriptions(is_active);
+    
+    -- Indexes for whatsapp_subscriptions
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_phone ON whatsapp_subscriptions(phone);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_active ON whatsapp_subscriptions(is_active);
+    
+    -- Indexes for user_search_history
+    CREATE INDEX IF NOT EXISTS idx_search_history_user ON user_search_history(user_id);
+    CREATE INDEX IF NOT EXISTS idx_search_history_session ON user_search_history(session_id);
+    CREATE INDEX IF NOT EXISTS idx_search_history_searched_at ON user_search_history(searched_at DESC);
+    
+    -- Indexes for recently_viewed_products
+    CREATE UNIQUE INDEX IF NOT EXISTS unique_user_product 
+    ON recently_viewed_products(user_id, product_id) 
+    WHERE user_id IS NOT NULL;
+    
+    CREATE UNIQUE INDEX IF NOT EXISTS unique_session_product 
+    ON recently_viewed_products(session_id, product_id) 
+    WHERE session_id IS NOT NULL AND user_id IS NULL;
+    
+    CREATE INDEX IF NOT EXISTS idx_recently_viewed_user ON recently_viewed_products(user_id);
+    CREATE INDEX IF NOT EXISTS idx_recently_viewed_product ON recently_viewed_products(product_id);
+    CREATE INDEX IF NOT EXISTS idx_recently_viewed_session ON recently_viewed_products(session_id);
+    CREATE INDEX IF NOT EXISTS idx_recently_viewed_viewed_at ON recently_viewed_products(viewed_at DESC);
+    
+    -- Indexes for product_views
+    CREATE INDEX IF NOT EXISTS idx_product_views_product ON product_views(product_id);
+    CREATE INDEX IF NOT EXISTS idx_product_views_viewed_at ON product_views(viewed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_product_views_session ON product_views(session_id);
   `)
   
   console.log('✅ Phase 3 & 4 tables created successfully')
+  console.log('✅ Recently Viewed Products, Recommendations, and Newsletter tables created')
 }

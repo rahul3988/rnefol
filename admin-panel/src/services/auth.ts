@@ -1,5 +1,6 @@
 // Authentication service for admin panel
 import apiService from './api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || `http://192.168.1.66:4000`
 
 interface User {
   id: number
@@ -43,7 +44,16 @@ class AuthService {
       const userStr = localStorage.getItem('user')
 
       if (token && userStr) {
-        const user = JSON.parse(userStr)
+        const parsed = JSON.parse(userStr)
+        const user = {
+          ...parsed,
+          // Normalize permissions to a string[] to avoid runtime errors
+          permissions: Array.isArray(parsed?.permissions)
+            ? parsed.permissions
+            : typeof parsed?.permissions === 'string'
+              ? parsed.permissions.split(',').map((p: string) => p.trim()).filter(Boolean)
+              : [],
+        }
         this.authState = {
           user,
           isAuthenticated: true,
@@ -133,7 +143,7 @@ class AuthService {
       this.setAuthState({ isLoading: true, error: null })
 
       // Call authentication API
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -213,7 +223,7 @@ class AuthService {
       const user = JSON.parse(userStr)
       
       // Validate token with API
-      const response = await fetch('/api/auth/verify', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/verify`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -262,8 +272,14 @@ class AuthService {
 
   // Check if user has permission
   hasPermission(permission: string): boolean {
-    if (!this.authState.user) return false
-    return this.authState.user.permissions.includes(permission)
+    const user = this.authState.user
+    if (!user) return false
+    const permissions: string[] = Array.isArray(user.permissions)
+      ? user.permissions
+      : typeof (user as any).permissions === 'string'
+        ? (user as any).permissions.split(',').map((p: string) => p.trim()).filter(Boolean)
+        : []
+    return permissions.includes(permission)
   }
 
   // Check if user has role

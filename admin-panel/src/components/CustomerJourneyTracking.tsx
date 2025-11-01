@@ -1,5 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { MapPin, Clock, ShoppingCart, Heart, Eye, Mail, MessageSquare, Bell, User, Calendar, TrendingUp, Filter, Search, Download, Share } from 'lucide-react'
+import { apiService } from '../services/api'
+import { socketService } from '../services/socket'
 
 interface JourneyEvent {
   id: string
@@ -46,126 +48,9 @@ interface JourneyStage {
 }
 
 export default function CustomerJourneyTracking() {
-  const [journeys] = useState<CustomerJourney[]>([
-    {
-      customerId: '1',
-      customerName: 'Priya Sharma',
-      email: 'priya.sharma@email.com',
-      totalEvents: 15,
-      firstSeen: '2024-01-15',
-      lastSeen: '2024-01-20',
-      totalValue: 25000,
-      status: 'active',
-      events: [
-        {
-          id: '1',
-          customerId: '1',
-          customerName: 'Priya Sharma',
-          eventType: 'page_view',
-          eventName: 'Homepage Visit',
-          timestamp: '2024-01-15 10:30',
-          details: { page: '/home', source: 'google', device: 'mobile' },
-          sessionId: 'sess_001'
-        },
-        {
-          id: '2',
-          customerId: '1',
-          customerName: 'Priya Sharma',
-          eventType: 'product_view',
-          eventName: 'Product Viewed',
-          timestamp: '2024-01-15 10:35',
-          details: { product: 'Vitamin C Serum', page: '/product/vitamin-c-serum' },
-          sessionId: 'sess_001'
-        },
-        {
-          id: '3',
-          customerId: '1',
-          customerName: 'Priya Sharma',
-          eventType: 'add_to_cart',
-          eventName: 'Added to Cart',
-          timestamp: '2024-01-15 10:40',
-          details: { product: 'Vitamin C Serum', value: 1299 },
-          sessionId: 'sess_001'
-        },
-        {
-          id: '4',
-          customerId: '1',
-          customerName: 'Priya Sharma',
-          eventType: 'email_open',
-          eventName: 'Email Opened',
-          timestamp: '2024-01-16 09:00',
-          details: { source: 'welcome_email' },
-          sessionId: 'sess_002'
-        },
-        {
-          id: '5',
-          customerId: '1',
-          customerName: 'Priya Sharma',
-          eventType: 'purchase',
-          eventName: 'Order Completed',
-          timestamp: '2024-01-16 14:20',
-          details: { value: 2500, product: 'Vitamin C Serum + Cleanser' },
-          sessionId: 'sess_002'
-        }
-      ],
-      touchpoints: {
-        website: 8,
-        email: 3,
-        sms: 1,
-        push: 2,
-        chat: 1
-      }
-    },
-    {
-      customerId: '2',
-      customerName: 'Amit Kumar',
-      email: 'amit.kumar@email.com',
-      totalEvents: 8,
-      firstSeen: '2024-01-18',
-      lastSeen: '2024-01-20',
-      totalValue: 4000,
-      status: 'active',
-      events: [
-        {
-          id: '6',
-          customerId: '2',
-          customerName: 'Amit Kumar',
-          eventType: 'page_view',
-          eventName: 'Homepage Visit',
-          timestamp: '2024-01-18 15:30',
-          details: { page: '/home', source: 'facebook', device: 'desktop' },
-          sessionId: 'sess_003'
-        },
-        {
-          id: '7',
-          customerId: '2',
-          customerName: 'Amit Kumar',
-          eventType: 'product_view',
-          eventName: 'Product Viewed',
-          timestamp: '2024-01-18 15:35',
-          details: { product: 'Face Cleanser', page: '/product/face-cleanser' },
-          sessionId: 'sess_003'
-        },
-        {
-          id: '8',
-          customerId: '2',
-          customerName: 'Amit Kumar',
-          eventType: 'purchase',
-          eventName: 'Order Completed',
-          timestamp: '2024-01-18 16:00',
-          details: { value: 4000, product: 'Face Cleanser + Moisturizer' },
-          sessionId: 'sess_003'
-        }
-      ],
-      touchpoints: {
-        website: 5,
-        email: 2,
-        sms: 0,
-        push: 1,
-        chat: 0
-      }
-    }
-  ])
+  const [journeys, setJourneys] = useState<CustomerJourney[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const [journeyStages] = useState<JourneyStage[]>([
     {
@@ -204,6 +89,57 @@ export default function CustomerJourneyTracking() {
   const [activeTab, setActiveTab] = useState('journeys')
   const [timeRange, setTimeRange] = useState('7d')
   const [eventFilter, setEventFilter] = useState('all')
+
+  // Load journey data from API
+  const loadJourneys = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const data = await apiService.getCustomerJourneys(timeRange, eventFilter)
+      const journeysData = Array.isArray(data) ? data : (data?.data || [])
+      setJourneys(journeysData)
+    } catch (err: any) {
+      console.error('Error loading journeys:', err)
+      setError('Failed to load journey data')
+      setJourneys([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load data on mount and when filters change
+  useEffect(() => {
+    loadJourneys()
+  }, [timeRange, eventFilter])
+
+  // Set up real-time updates
+  useEffect(() => {
+    if (!socketService.isConnected()) {
+      socketService.connect()
+    }
+
+    // Subscribe to user activity updates
+    const unsubscribeUserAction = socketService.subscribe('user-action-update', (data: any) => {
+      // Reload journeys when new activity occurs
+      loadJourneys()
+    })
+
+    // Subscribe to page view updates
+    const unsubscribePageView = socketService.subscribe('page-view-update', (data: any) => {
+      loadJourneys()
+    })
+
+    // Subscribe to cart updates
+    const unsubscribeCart = socketService.subscribe('cart-update', (data: any) => {
+      loadJourneys()
+    })
+
+    return () => {
+      unsubscribeUserAction()
+      unsubscribePageView()
+      unsubscribeCart()
+    }
+  }, [])
 
   const totalStats = {
     totalCustomers: journeys.length,
@@ -384,78 +320,99 @@ export default function CustomerJourneyTracking() {
                 </div>
               </div>
               
-              <div className="space-y-4">
-                {journeys.map((journey) => (
-                  <div key={journey.customerId} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-200 font-bold">
-                            {journey.customerName.charAt(0)}
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <p className="mt-4 text-slate-600 dark:text-slate-400">Loading journey data...</p>
+                </div>
+              ) : error ? (
+                <div className="text-center py-12">
+                  <p className="text-red-600 dark:text-red-400">{error}</p>
+                  <button
+                    onClick={loadJourneys}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : journeys.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-slate-600 dark:text-slate-400">No journey data found for the selected time range.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {journeys.map((journey) => (
+                    <div key={journey.customerId} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center">
+                            <span className="text-blue-600 dark:text-blue-200 font-bold">
+                              {journey.customerName.charAt(0)}
+                            </span>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-slate-100">
+                              {journey.customerName}
+                            </h4>
+                            <p className="text-sm text-slate-600 dark:text-slate-400">
+                              {journey.email}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <div className="text-right">
+                            <p className="text-sm text-slate-600 dark:text-slate-400">Total Value</p>
+                            <p className="font-semibold text-green-600">₹{journey.totalValue.toLocaleString()}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-slate-600 dark:text-slate-400">Events</p>
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">{journey.totalEvents}</p>
+                          </div>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(journey.status)}`}>
+                            {journey.status}
                           </span>
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-slate-100">
-                            {journey.customerName}
-                          </h4>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            {journey.email}
-                          </p>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex space-x-4 text-sm text-slate-600 dark:text-slate-400">
+                          <span>First seen: {new Date(journey.firstSeen).toLocaleDateString()}</span>
+                          <span>Last seen: {new Date(journey.lastSeen).toLocaleDateString()}</span>
+                        </div>
+                        <button
+                          onClick={() => setSelectedJourney(journey)}
+                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                        >
+                          View Journey
+                        </button>
+                      </div>
+                      
+                      <div className="flex space-x-4 text-sm">
+                        <div className="flex items-center space-x-1">
+                          <Eye className="h-4 w-4 text-blue-500" />
+                          <span className="text-slate-600 dark:text-slate-400">Website: {journey.touchpoints.website}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Mail className="h-4 w-4 text-indigo-500" />
+                          <span className="text-slate-600 dark:text-slate-400">Email: {journey.touchpoints.email}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <MessageSquare className="h-4 w-4 text-cyan-500" />
+                          <span className="text-slate-600 dark:text-slate-400">SMS: {journey.touchpoints.sms}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Bell className="h-4 w-4 text-orange-500" />
+                          <span className="text-slate-600 dark:text-slate-400">Push: {journey.touchpoints.push}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <MessageSquare className="h-4 w-4 text-pink-500" />
+                          <span className="text-slate-600 dark:text-slate-400">Chat: {journey.touchpoints.chat}</span>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <div className="text-right">
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Total Value</p>
-                          <p className="font-semibold text-green-600">₹{journey.totalValue.toLocaleString()}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Events</p>
-                          <p className="font-semibold text-slate-900 dark:text-slate-100">{journey.totalEvents}</p>
-                        </div>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(journey.status)}`}>
-                          {journey.status}
-                        </span>
-                      </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex space-x-4 text-sm text-slate-600 dark:text-slate-400">
-                        <span>First seen: {new Date(journey.firstSeen).toLocaleDateString()}</span>
-                        <span>Last seen: {new Date(journey.lastSeen).toLocaleDateString()}</span>
-                      </div>
-                      <button
-                        onClick={() => setSelectedJourney(journey)}
-                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-                      >
-                        View Journey
-                      </button>
-                    </div>
-                    
-                    <div className="flex space-x-4 text-sm">
-                      <div className="flex items-center space-x-1">
-                        <Eye className="h-4 w-4 text-blue-500" />
-                        <span className="text-slate-600 dark:text-slate-400">Website: {journey.touchpoints.website}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <Mail className="h-4 w-4 text-indigo-500" />
-                        <span className="text-slate-600 dark:text-slate-400">Email: {journey.touchpoints.email}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <MessageSquare className="h-4 w-4 text-cyan-500" />
-                        <span className="text-slate-600 dark:text-slate-400">SMS: {journey.touchpoints.sms}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <Bell className="h-4 w-4 text-orange-500" />
-                        <span className="text-slate-600 dark:text-slate-400">Push: {journey.touchpoints.push}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <MessageSquare className="h-4 w-4 text-pink-500" />
-                        <span className="text-slate-600 dark:text-slate-400">Chat: {journey.touchpoints.chat}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -495,7 +452,7 @@ export default function CustomerJourneyTracking() {
                   </div>
                 ))}
               </div>
-            </div>
+              </div>
           )}
 
           {/* Journey Stages Tab */}

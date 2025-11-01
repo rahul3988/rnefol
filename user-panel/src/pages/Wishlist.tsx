@@ -134,12 +134,12 @@ export default function Wishlist() {
                 <a href={`#/user/product/${item.slug}`}>
                   <div className="relative">
                     <img
-                      src={item.list_image || '/IMAGES/default-product.jpg'}
+                      src={item.list_image || ''}
                       alt={item.title}
                       className="w-full h-64 object-cover"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
-                        target.src = '/IMAGES/default-product.jpg'
+                        target.style.display = 'none'
                       }}
                     />
                   </div>

@@ -459,6 +459,120 @@ export const videosAPI = {
   }
 }
 
+// Live Chat API
+export const liveChatAPI = {
+  async createSession(data: { userId?: string | number, customerName?: string, customerEmail?: string, customerPhone?: string }) {
+    const response = await fetch(`${API_BASE}/api/live-chat/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    return handleResponse(response)
+  },
+
+  async getMessages(sessionId: number | string) {
+    const params = new URLSearchParams({ sessionId: String(sessionId) }).toString()
+    const response = await fetch(`${API_BASE}/api/live-chat/messages?${params}`)
+    return handleResponse(response)
+  },
+
+  async sendMessage(data: { sessionId: number | string, sender: 'customer' | 'agent', senderName?: string, message: string, type?: string }) {
+    const response = await fetch(`${API_BASE}/api/live-chat/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    return handleResponse(response)
+  }
+}
+
+// Recommendations API
+export const recommendationsAPI = {
+  async trackProductView(productId: number | string, data?: { viewDuration?: number, source?: string }) {
+    const response = await fetch(`${API_BASE}/api/products/${productId}/view`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data || {})
+    })
+    return handleResponse(response)
+  },
+
+  async getRecentlyViewed(limit: number = 10) {
+    const response = await fetch(`${API_BASE}/api/recommendations/recently-viewed?limit=${limit}`, {
+      headers: getAuthHeaders()
+    })
+    return handleResponse(response)
+  },
+
+  async getRelatedProducts(productId: number | string, limit: number = 8) {
+    const response = await fetch(`${API_BASE}/api/recommendations/related/${productId}?limit=${limit}`)
+    return handleResponse(response)
+  },
+
+  async getRecommendations(type: string = 'based_on_browsing', limit: number = 8) {
+    const response = await fetch(`${API_BASE}/api/recommendations?type=${type}&limit=${limit}`, {
+      headers: getAuthHeaders()
+    })
+    return handleResponse(response)
+  },
+
+  async trackSearch(query: string, resultsCount: number = 0) {
+    const response = await fetch(`${API_BASE}/api/search/track`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ query, resultsCount })
+    })
+    return handleResponse(response)
+  },
+
+  async getPopularSearches(limit: number = 10) {
+    const response = await fetch(`${API_BASE}/api/search/popular?limit=${limit}`)
+    return handleResponse(response)
+  }
+}
+
+// WhatsApp Subscription API
+export const whatsappAPI = {
+  async subscribe(phone: string, name?: string, source?: string) {
+    const response = await fetch(`${API_BASE}/api/whatsapp/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, name, source })
+    })
+    return handleResponse(response)
+  },
+
+  async unsubscribe(phone: string) {
+    const response = await fetch(`${API_BASE}/api/whatsapp/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    })
+    return handleResponse(response)
+  }
+}
+
+// Newsletter API (deprecated - kept for backward compatibility)
+export const newsletterAPI = {
+  async subscribe(email: string, name?: string, source?: string) {
+    const response = await fetch(`${API_BASE}/api/newsletter/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, source })
+    })
+    return handleResponse(response)
+  },
+
+  async unsubscribe(email: string, token?: string) {
+    const response = await fetch(`${API_BASE}/api/newsletter/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, token })
+    })
+    return handleResponse(response)
+  }
+}
+
 // Export all APIs
 export const api = {
   auth: authAPI,
@@ -471,7 +585,11 @@ export const api = {
   discounts: discountsAPI,
   payment: paymentAPI,
   analytics: analyticsAPI,
-  videos: videosAPI
+  videos: videosAPI,
+  liveChat: liveChatAPI,
+  recommendations: recommendationsAPI,
+  whatsapp: whatsappAPI,
+  newsletter: newsletterAPI
 }
 
 export default api

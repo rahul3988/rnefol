@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useToast } from '../../components/ToastProvider'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 interface Invoice {
   id: string
@@ -25,6 +27,7 @@ interface InvoiceItem {
 }
 
 const Invoice = () => {
+  const { notify } = useToast()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -32,6 +35,7 @@ const Invoice = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // Load invoices from API
   useEffect(() => {
@@ -97,9 +101,11 @@ const Invoice = () => {
         const newInvoice = await response.json()
         setInvoices([...invoices, newInvoice])
         setShowCreateModal(false)
+        notify('success','Invoice created')
       }
     } catch (error) {
       console.error('Error creating invoice:', error)
+      notify('error','Failed to create invoice')
     } finally {
       setLoading(false)
     }
@@ -121,28 +127,32 @@ const Invoice = () => {
         setInvoices(invoices.map(inv => inv.id === selectedInvoice.id ? updatedInvoice : inv))
         setShowEditModal(false)
         setSelectedInvoice(null)
+        notify('success','Invoice updated')
       }
     } catch (error) {
       console.error('Error updating invoice:', error)
+      notify('error','Failed to update invoice')
     } finally {
       setLoading(false)
     }
   }
 
   const handleDeleteInvoice = async (invoiceId: string) => {
-    if (!confirm('Are you sure you want to delete this invoice?')) return
-    
+    if (!invoiceId) return
     setLoading(true)
     try {
-      const response = await fetch(`/api/invoices/${invoiceId}`, {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const response = await fetch(`${apiBase}/api/invoices/${invoiceId}`, {
         method: 'DELETE'
       })
       
       if (response.ok) {
         setInvoices(invoices.filter(inv => inv.id !== invoiceId))
+        notify('success','Invoice deleted')
       }
     } catch (error) {
       console.error('Error deleting invoice:', error)
+      notify('error','Failed to delete invoice')
     } finally {
       setLoading(false)
     }
@@ -151,7 +161,8 @@ const Invoice = () => {
   const handleSendInvoice = async (invoiceId: string) => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/invoices/${invoiceId}/send`, {
+      const apiBase = (import.meta as any).env.VITE_API_URL || `http://192.168.1.66:4000`;
+      const response = await fetch(`${apiBase}/api/invoices/${invoiceId}/send`, {
         method: 'POST'
       })
       
@@ -159,9 +170,11 @@ const Invoice = () => {
         setInvoices(invoices.map(inv => 
           inv.id === invoiceId ? { ...inv, status: 'sent' as const } : inv
         ))
+        notify('success','Invoice sent')
       }
     } catch (error) {
       console.error('Error sending invoice:', error)
+      notify('error','Failed to send invoice')
     } finally {
       setLoading(false)
     }
@@ -344,11 +357,7 @@ const Invoice = () => {
                           </svg>
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDeleteInvoice(invoice.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete"
-                      >
+                      <button onClick={()=>setConfirmDeleteId(invoice.id)} className="text-red-600 hover:text-red-800" title="Delete">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
@@ -383,6 +392,7 @@ const Invoice = () => {
           loading={loading}
         />
       )}
+    <ConfirmDialog open={!!confirmDeleteId} onClose={()=>setConfirmDeleteId(null)} onConfirm={()=>{ if (confirmDeleteId) handleDeleteInvoice(confirmDeleteId) }} title="Delete this invoice?" description="This action cannot be undone." confirmText="Delete" />
     </div>
   )
 }

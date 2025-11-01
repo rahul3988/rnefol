@@ -47,10 +47,17 @@ export default function Cart() {
   }
 
   const calculateItemTax = (price: string, quantity: number, category?: string) => {
-    const itemSubtotal = parsePrice(price) * quantity
+    const itemPrice = parsePrice(price) // MRP which includes tax
     const categoryLower = (category || '').toLowerCase()
     const taxRate = categoryLower.includes('hair') ? 0.05 : 0.18
-    return `₹${(itemSubtotal * taxRate).toLocaleString()}`
+    
+    // Extract tax from tax-inclusive MRP
+    // basePrice = taxInclusivePrice / (1 + taxRate)
+    // tax = taxInclusivePrice - basePrice
+    const basePrice = itemPrice / (1 + taxRate)
+    const itemTax = itemPrice - basePrice
+    
+    return `₹${(itemTax * quantity).toLocaleString()}`
   }
 
   const getTaxRateText = (category?: string) => {
@@ -193,7 +200,7 @@ export default function Cart() {
                           Total: {calculateItemTotal(item.price, item.quantity)}
                         </p>
                         <p className="text-slate-600 text-sm">
-                          Tax ({getTaxRateText(item.category)}): {calculateItemTax(item.price, item.quantity, item.category)}
+                          GST ({getTaxRateText(item.category)}): {calculateItemTax(item.price, item.quantity, item.category)}
                         </p>
                       </div>
 
@@ -237,44 +244,143 @@ export default function Cart() {
                 <h2 className="text-xl font-semibold text-slate-800 mb-6">Order Summary</h2>
                 
                 <div className="space-y-4 mb-6">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Subtotal ({items.length} items)</span>
-                    <span>₹{subtotal.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Shipping</span>
-                    <span className="text-green-600">Free</span>
-                  </div>
-                  {/* Show tax breakdown by category */}
-                  {items.some(item => (item.category || '').toLowerCase().includes('hair')) && (
-                    <div className="flex justify-between text-slate-600">
-                      <span>GST (5% - Hair Products)</span>
-                      <span>₹{items.reduce((sum, item) => {
-                        const category = (item.category || '').toLowerCase()
-                        if (category.includes('hair')) {
-                          return sum + (parsePrice(item.price) * item.quantity * 0.05)
-                        }
-                        return sum
-                      }, 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {items.some(item => !(item.category || '').toLowerCase().includes('hair')) && (
-                    <div className="flex justify-between text-slate-600">
-                      <span>GST (18% - Other Products)</span>
-                      <span>₹{items.reduce((sum, item) => {
-                        const category = (item.category || '').toLowerCase()
-                        if (!category.includes('hair')) {
-                          return sum + (parsePrice(item.price) * item.quantity * 0.18)
-                        }
-                        return sum
-                      }, 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  <hr className="border-slate-200" />
-                  <div className="flex justify-between text-lg font-semibold" style={{color: '#1B4965'}}>
-                    <span>Total</span>
-                    <span>₹{total.toLocaleString()}</span>
-                  </div>
+                  {/* Calculate MRP Total and Product Discount */}
+                  {(() => {
+                    const mrpTotal = items.reduce((sum, item) => {
+                      // Priority order for MRP:
+                      // 1. Cart item mrp field (from backend)
+                      // 2. CSV product MRP (if available)
+                      // 3. Fallback to price only if no MRP found
+                      let itemMrp = null
+                      
+                      const itemAny = item as any
+                      if (itemAny.mrp) {
+                        itemMrp = itemAny.mrp
+                      } else if (itemAny.details?.mrp) {
+                        itemMrp = itemAny.details.mrp
+                      } else if (itemAny.product?.details?.mrp) {
+                        itemMrp = itemAny.product.details.mrp
+                      } else if (itemAny.csvProduct) {
+                        const csvProduct = itemAny.csvProduct
+                        itemMrp = csvProduct['MRP (₹)'] || csvProduct['MRP '] || csvProduct['MRP'] || 
+                                  csvProduct['mrp'] || csvProduct['MRP(₹)'] || csvProduct['MRP(₹) ']
+                      }
+                      
+                      if (!itemMrp) {
+                        itemMrp = item.price // Last resort fallback
+                      }
+                      
+                      return sum + (parsePrice(itemMrp || '0') * item.quantity)
+                    }, 0)
+                    
+                    const productDiscount = items.reduce((sum, item) => {
+                      const itemAny = item as any
+                      let itemMrp = null
+                      
+                      if (itemAny.mrp) {
+                        itemMrp = itemAny.mrp
+                      } else if (itemAny.details?.mrp) {
+                        itemMrp = itemAny.details.mrp
+                      } else if (itemAny.product?.details?.mrp) {
+                        itemMrp = itemAny.product.details.mrp
+                      } else if (itemAny.csvProduct) {
+                        const csvProduct = itemAny.csvProduct
+                        itemMrp = csvProduct['MRP (₹)'] || csvProduct['MRP '] || csvProduct['MRP'] || 
+                                  csvProduct['mrp'] || csvProduct['MRP(₹)'] || csvProduct['MRP(₹) ']
+                      }
+                      
+                      if (!itemMrp) {
+                        itemMrp = item.price
+                      }
+                      
+                      const mrp = parsePrice(itemMrp || '0')
+                      const currentPrice = parsePrice(item.price)
+                      const discount = (mrp - currentPrice) * item.quantity
+                      return sum + Math.max(0, discount)
+                    }, 0)
+                    
+                    const shipping = 0
+                    const calculatedTax = items.reduce((totalTax, item) => {
+                      const itemPrice = parsePrice(item.price)
+                      const category = (item.category || '').toLowerCase()
+                      const taxRate = category.includes('hair') ? 0.05 : 0.18
+                      const basePrice = itemPrice / (1 + taxRate)
+                      const itemTax = itemPrice - basePrice
+                      return totalTax + (itemTax * item.quantity)
+                    }, 0)
+                    
+                    return (
+                      <>
+                        {/* MRP Total */}
+                        <div className="flex justify-between text-slate-600">
+                          <span>MRP</span>
+                          <span>₹{mrpTotal.toLocaleString()}</span>
+                        </div>
+                        
+                        {/* Product Discount */}
+                        {productDiscount > 0 && (
+                          <div className="flex justify-between text-green-600">
+                            <span>Product Discount</span>
+                            <span>-₹{productDiscount.toLocaleString()}</span>
+                          </div>
+                        )}
+                        
+                        {/* Subtotal */}
+                        <div className="flex justify-between font-medium text-slate-700">
+                          <span>Subtotal ({items.length} items)</span>
+                          <span>₹{subtotal.toLocaleString()}</span>
+                        </div>
+                        
+                        {/* Shipping */}
+                        <div className="flex justify-between text-slate-600">
+                          <span>Shipping Charges</span>
+                          <span className={shipping > 0 ? '' : 'text-green-600'}>
+                            {shipping > 0 ? `₹${shipping.toFixed(2)}` : 'Free'}
+                          </span>
+                        </div>
+                        
+                        {/* GST breakdown by category */}
+                        {items.some(item => (item.category || '').toLowerCase().includes('hair')) && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>GST (5% - Hair Products, Inclusive)</span>
+                            <span>₹{items.reduce((sum, item) => {
+                              const category = (item.category || '').toLowerCase()
+                              if (category.includes('hair')) {
+                                const itemPrice = parsePrice(item.price)
+                                const basePrice = itemPrice / 1.05
+                                const itemTax = itemPrice - basePrice
+                                return sum + (itemTax * item.quantity)
+                              }
+                              return sum
+                            }, 0).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {items.some(item => !(item.category || '').toLowerCase().includes('hair')) && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>GST (18% - Other Products, Inclusive)</span>
+                            <span>₹{items.reduce((sum, item) => {
+                              const category = (item.category || '').toLowerCase()
+                              if (!category.includes('hair')) {
+                                const itemPrice = parsePrice(item.price)
+                                const basePrice = itemPrice / 1.18
+                                const itemTax = itemPrice - basePrice
+                                return sum + (itemTax * item.quantity)
+                              }
+                              return sum
+                            }, 0).toLocaleString()}</span>
+                          </div>
+                        )}
+                        
+                        {/* Grand Total */}
+                        <hr className="border-slate-200" />
+                        <div className="flex justify-between text-lg font-bold" style={{color: '#1B4965'}}>
+                          <span>Grand Total</span>
+                          <span>₹{total.toLocaleString()}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">* MRP includes GST</div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 <div className="space-y-3">

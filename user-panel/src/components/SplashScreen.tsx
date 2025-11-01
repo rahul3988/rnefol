@@ -4,30 +4,56 @@ interface SplashScreenProps {
   onComplete: () => void
 }
 
+type VideoType = 'portrait' | 'tablet' | 'desktop'
+
 export default function SplashScreen({ onComplete }: SplashScreenProps) {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [showSkipButton, setShowSkipButton] = useState(false)
   const [videoError, setVideoError] = useState(false)
-  const [isPortrait, setIsPortrait] = useState(false)
+  const [videoType, setVideoType] = useState<VideoType>('desktop')
   const videoRef = useRef<HTMLVideoElement>(null)
+  const hasStartedPlayingRef = useRef(false)
 
-  // Detect orientation
+  // Detect device type and aspect ratio
   useEffect(() => {
-    const checkOrientation = () => {
-      const isPortraitMode = window.innerHeight > window.innerWidth
-      setIsPortrait(isPortraitMode)
+    const detectVideoType = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      
+      // Portrait mode (9:16 ratio) - height > width
+      if (height > width) {
+        const portraitRatio = height / width
+        // 9:16 in portrait = 16/9 = 1.778, allow some tolerance (1.5 to 2.5)
+        if (portraitRatio >= 1.5) {
+          setVideoType('portrait')
+          return
+        }
+      }
+
+      // Calculate landscape aspect ratio
+      const aspectRatio = width / height
+
+      // Tablet mode (4:3 = 1.333) - allow tolerance between 1.1 and 1.6
+      if (aspectRatio >= 1.1 && aspectRatio <= 1.6) {
+        setVideoType('tablet')
+        return
+      }
+
+      // Desktop/Landscape mode (16:9 = 1.778) - wider screens
+      // Default to desktop for aspect ratio > 1.6
+      setVideoType('desktop')
     }
 
     // Check initial orientation
-    checkOrientation()
+    detectVideoType()
 
     // Listen for orientation changes
-    window.addEventListener('resize', checkOrientation)
-    window.addEventListener('orientationchange', checkOrientation)
+    window.addEventListener('resize', detectVideoType)
+    window.addEventListener('orientationchange', detectVideoType)
 
     return () => {
-      window.removeEventListener('resize', checkOrientation)
-      window.removeEventListener('orientationchange', checkOrientation)
+      window.removeEventListener('resize', detectVideoType)
+      window.removeEventListener('orientationchange', detectVideoType)
     }
   }, [])
 
@@ -41,6 +67,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
   }, [])
 
   const handleVideoEnded = () => {
+    // Video finished, navigate to page
     onComplete()
   }
 
@@ -72,30 +99,48 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
     }
   }
 
-  // Get the appropriate video source based on orientation
+  // Get the appropriate video source based on device type
   const getVideoSource = () => {
-    if (isPortrait) {
-      return '/IMAGES/SS LOGO PORTRAIT.mp4'
+    switch (videoType) {
+      case 'portrait':
+        return '/IMAGES/SS LOGO PORTRAIT.mp4'
+      case 'tablet':
+        return '/IMAGES/SS LOGO TAB.mp4'
+      case 'desktop':
+      default:
+        return '/IMAGES/SS LOGO.mp4'
     }
-    return '/IMAGES/SS LOGO.mp4'
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      {/* Full-screen video container with no margins */}
-      <div className="absolute inset-0 w-full h-full">
+      {/* Full-screen video container */}
+      <div className="absolute inset-0 w-full h-full flex items-center justify-center">
         {!videoError ? (
           <video
             ref={videoRef}
-            className="w-full h-full object-cover cursor-pointer"
-            autoPlay
+            className="w-full h-full object-contain cursor-pointer"
             muted
             playsInline
             preload="auto"
             onEnded={handleVideoEnded}
             onLoadedData={handleVideoLoaded}
+            onCanPlay={() => {
+              // Ensure video plays only once when ready
+              if (videoRef.current && !hasStartedPlayingRef.current && videoRef.current.paused) {
+                hasStartedPlayingRef.current = true
+                videoRef.current.play().catch((err) => {
+                  console.error('Error playing video:', err)
+                })
+              }
+            }}
             onError={handleVideoError}
             onClick={handleVideoClick}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+            }}
           >
             <source src={getVideoSource()} type="video/mp4" />
             Your browser does not support the video tag.
@@ -110,23 +155,19 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
           </div>
         )}
         
-        {/* Loading indicator */}
+        {/* Loading indicator - only shown while video is loading */}
         {!isVideoLoaded && !videoError && (
           <div className="absolute inset-0 flex items-center justify-center bg-black">
             <div className="text-white text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
               <p className="text-lg">Loading video...</p>
-              <p className="text-sm opacity-70 mt-2">Click to play/pause</p>
-              <p className="text-xs opacity-50 mt-1">
-                {isPortrait ? 'Portrait Mode' : 'Landscape Mode'}
-              </p>
             </div>
           </div>
         )}
       </div>
 
       {/* Skip Button */}
-      {showSkipButton && (
+      {showSkipButton && isVideoLoaded && (
         <button
           onClick={handleSkip}
           className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-colors border border-white/30 z-10"
@@ -135,24 +176,12 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
         </button>
       )}
 
-      {/* Progress Bar */}
-      <div className="absolute bottom-6 left-6 right-6 z-10">
-        <div className="bg-white/20 rounded-full h-1">
-          <div className="bg-white h-1 rounded-full animate-pulse" style={{ width: '100%' }}></div>
-        </div>
-      </div>
-
       {/* Video Controls Hint */}
       {isVideoLoaded && (
         <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 text-white/70 text-sm">
           Click video to play/pause
         </div>
       )}
-
-      {/* Orientation Indicator (for debugging) */}
-      <div className="absolute top-6 left-6 text-white/50 text-xs z-10">
-        {isPortrait ? '📱 Portrait' : '🖥️ Landscape'}
-      </div>
     </div>
   )
 }

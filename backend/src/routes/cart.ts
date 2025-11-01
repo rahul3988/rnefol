@@ -27,18 +27,22 @@ export async function getCart(pool: Pool, req: Request, res: Response) {
         finalPrice = details.websitePrice
       }
       
+      // Ensure MRP is properly extracted and converted to string
+      const mrpValue = details.mrp || null
+      
       return {
         id: row.id,
         product_id: row.product_id,
         slug: row.slug,
         title: row.title,
-        price: String(finalPrice), // Convert to string as frontend expects
+        price: String(finalPrice), // Convert to string as frontend expects (this is websitePrice)
         image: row.list_image, // Rename list_image to image
         quantity: row.quantity,
         category: row.category,
-        mrp: details.mrp || null,
-        discounted_price: details.websitePrice || null,
+        mrp: mrpValue ? String(mrpValue) : null, // Ensure MRP is string and not null if exists
+        discounted_price: details.websitePrice ? String(details.websitePrice) : null,
         original_price: String(row.price),
+        details: details, // Include full details object for frontend access
         csvProduct: details,
         created_at: row.created_at,
         updated_at: row.updated_at

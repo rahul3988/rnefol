@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle, Package, Truck, Clock } from 'lucide-react'
+import { api } from '../services/api'
 
 interface OrderDetails {
   order_number: string
@@ -50,15 +51,11 @@ export default function Confirmation() {
 
   const fetchOrderDetails = async (orderNum: string) => {
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/api/orders/${orderNum}`)
-      if (response.ok) {
-        const data = await response.json()
-        setOrderDetails(data)
-      } else {
-        setError('Order not found')
-      }
-    } catch (err) {
-      setError('Failed to fetch order details')
+      const data = await api.orders.getById(orderNum)
+      setOrderDetails(data as any)
+    } catch (err: any) {
+      console.error('Failed to fetch order details:', err)
+      setError(err.message || 'Failed to fetch order details. Please ensure you are logged in.')
     } finally {
       setLoading(false)
     }
@@ -259,7 +256,7 @@ export default function Confirmation() {
                 <span className="dark:text-slate-100">₹{Number(orderDetails.shipping || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">Tax</span>
+                <span className="text-slate-600 dark:text-slate-400">GST</span>
                 <span className="dark:text-slate-100">₹{Number(orderDetails.tax || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-semibold text-lg pt-2 border-t border-slate-200 dark:border-slate-700">

@@ -43,9 +43,21 @@ export default function CustomerSegmentation() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [analyticsOverview, setAnalyticsOverview] = useState<{ orders?: number; revenue?: number; customers?: number } | null>(null)
+  const [selectedSegment, setSelectedSegment] = useState<CustomerSegment | null>(null)
+  const [showCreateSegment, setShowCreateSegment] = useState(false)
+  const [showSegmentDetails, setShowSegmentDetails] = useState(false)
+  const [activeTab, setActiveTab] = useState('segments')
+  const [segmentForm, setSegmentForm] = useState<{ name: string; description: string; criteria: SegmentCriteria[] }>({
+    name: '',
+    description: '',
+    criteria: []
+  })
 
   useEffect(() => {
     loadSegmentsData()
+    // Also fetch analytics so top stats can show real data even if segments are empty
+    loadAnalytics()
   }, [])
 
   const loadSegmentsData = async () => {
@@ -53,7 +65,13 @@ export default function CustomerSegmentation() {
       setLoading(true)
       setError('')
       const data = await apiService.getCustomerSegments().catch(() => [])
-      setSegments(Array.isArray(data) ? data : [])
+      let list = Array.isArray(data) ? data : []
+      // If no saved segments, fallback to aggregator
+      if (!list || list.length === 0) {
+        const agg = await apiService.getCustomerSegmentAggregates().catch(() => [])
+        list = Array.isArray(agg) ? agg : []
+      }
+      setSegments(list)
       setCustomers([]) // Customers would be loaded per segment
     } catch (err) {
       console.error('Failed to load segments data:', err)
@@ -63,10 +81,46 @@ export default function CustomerSegmentation() {
     }
   }
 
-  const [selectedSegment, setSelectedSegment] = useState<CustomerSegment | null>(null)
-  const [showCreateSegment, setShowCreateSegment] = useState(false)
-  const [showSegmentDetails, setShowSegmentDetails] = useState(false)
-  const [activeTab, setActiveTab] = useState('segments')
+  const loadCustomers = async () => {
+    try {
+      setError('')
+      const data: any[] = await (apiService as any).getUsers()
+      const mapped: Customer[] = (Array.isArray(data) ? data : []).map((u: any) => ({
+        id: String(u.id),
+        name: u.name,
+        email: u.email,
+        segment: 'All',
+        totalOrders: parseInt(String(u.total_orders || 0), 10) || 0,
+        totalSpent: parseFloat(String(u.total_spent || 0)) || 0,
+        lastOrderDate: u.last_order_date || u.member_since,
+        location: u.city || 'N/A',
+        tags: []
+      }))
+      setCustomers(mapped)
+    } catch (err) {
+      console.error('Failed to load customers:', err)
+      setCustomers([])
+    }
+  }
+
+  const loadAnalytics = async () => {
+    try {
+      const data: any = await (apiService as any).getAnalytics()
+      const overview = data?.overview || null
+      setAnalyticsOverview(overview)
+    } catch (err) {
+      console.error('Failed to load analytics:', err)
+      setAnalyticsOverview(null)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'customers') {
+      loadCustomers()
+    } else if (activeTab === 'analytics') {
+      loadAnalytics()
+    }
+  }, [activeTab])
 
   const totalStats = {
     totalSegments: segments.length,
@@ -111,11 +165,19 @@ export default function CustomerSegmentation() {
   const handleEditSegment = (segment: CustomerSegment) => {
     setSelectedSegment(segment)
     setShowCreateSegment(true)
+    setSegmentForm({
+      name: segment.name,
+      description: segment.description,
+      criteria: segment.criteria || []
+    })
   }
 
   const handleDeleteSegment = (segmentId: string) => {
-    console.log('Deleting segment:', segmentId)
-    alert('Segment deleted successfully!')
+    if (!segmentId) return
+    if (!confirm('Delete this segment?')) return
+    apiService.deleteCustomerSegment(segmentId)
+      .then(() => loadSegmentsData())
+      .catch(() => alert('Failed to delete segment'))
   }
 
   const handleViewSegment = (segment: CustomerSegment) => {
@@ -209,7 +271,7 @@ export default function CustomerSegmentation() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">Total Customers</h3>
-              <p className="text-3xl font-bold">{totalStats.totalCustomers.toLocaleString()}</p>
+              <p className="text-3xl font-bold">{(analyticsOverview?.customers ?? totalStats.totalCustomers).toLocaleString()}</p>
             </div>
             <Users className="h-8 w-8" />
           </div>
@@ -229,7 +291,11 @@ export default function CustomerSegmentation() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">Total Revenue</h3>
-              <p className="text-3xl font-bold">₹{(totalStats.totalRevenue / 100000).toFixed(1)}L</p>
+              <p className="text-3xl font-bold">
+                {analyticsOverview?.revenue !== undefined
+                  ? `₹${Number(analyticsOverview.revenue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : `₹${(totalStats.totalRevenue / 100000).toFixed(1)}L`}
+              </p>
             </div>
             <ShoppingCart className="h-8 w-8" />
           </div>
@@ -489,13 +555,15 @@ export default function CustomerSegmentation() {
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600 dark:text-slate-400">Total Customers</span>
                       <span className="font-semibold text-slate-900 dark:text-slate-100">
-                        {totalStats.totalCustomers}
+                        {analyticsOverview?.customers ?? totalStats.totalCustomers}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600 dark:text-slate-400">Total Revenue</span>
                       <span className="font-semibold text-green-600">
-                        ₹{(totalStats.totalRevenue / 100000).toFixed(1)}L
+                        {analyticsOverview?.revenue !== undefined
+                          ? `₹${Number(analyticsOverview.revenue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : `₹${(totalStats.totalRevenue / 100000).toFixed(1)}L`}
                       </span>
                     </div>
                   </div>
@@ -596,7 +664,8 @@ export default function CustomerSegmentation() {
                 </label>
                 <input
                   type="text"
-                  defaultValue={selectedSegment?.name || ''}
+                  value={segmentForm.name}
+                  onChange={(e) => setSegmentForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Enter segment name"
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
                 />
@@ -607,7 +676,8 @@ export default function CustomerSegmentation() {
                 </label>
                 <textarea
                   rows={3}
-                  defaultValue={selectedSegment?.description || ''}
+                  value={segmentForm.description}
+                  onChange={(e) => setSegmentForm(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Enter segment description"
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
                 />
@@ -618,22 +688,42 @@ export default function CustomerSegmentation() {
                 </label>
                 <div className="space-y-2">
                   <div className="flex space-x-2">
-                    <select className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100">
-                      <option>Total Spent</option>
-                      <option>Total Orders</option>
-                      <option>Registration Date</option>
-                      <option>Last Order Date</option>
-                      <option>Category Preference</option>
+                    <select
+                      className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                      onChange={(e) => setSegmentForm(prev => ({
+                        ...prev,
+                        criteria: [{ field: e.target.value, operator: 'greater_than', value: '' }]
+                      }))}
+                      value={segmentForm.criteria[0]?.field || ''}
+                    >
+                      <option value="">Select field</option>
+                      <option value="total_spent">Total Spent</option>
+                      <option value="total_orders">Total Orders</option>
+                      <option value="registration_date">Registration Date</option>
+                      <option value="last_order_date">Last Order Date</option>
+                      <option value="category_preference">Category Preference</option>
                     </select>
-                    <select className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100">
-                      <option>is greater than</option>
-                      <option>is less than</option>
-                      <option>equals</option>
-                      <option>contains</option>
+                    <select
+                      className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                      onChange={(e) => setSegmentForm(prev => ({
+                        ...prev,
+                        criteria: [{ ...(prev.criteria[0] || { field: '', operator: 'greater_than', value: '' }), operator: (e.target.value as any) }]
+                      }))}
+                      value={segmentForm.criteria[0]?.operator || 'greater_than'}
+                    >
+                      <option value="greater_than">is greater than</option>
+                      <option value="less_than">is less than</option>
+                      <option value="equals">equals</option>
+                      <option value="contains">contains</option>
                     </select>
                     <input
                       type="text"
                       placeholder="Value"
+                      value={segmentForm.criteria[0]?.value || ''}
+                      onChange={(e) => setSegmentForm(prev => ({
+                        ...prev,
+                        criteria: [{ ...(prev.criteria[0] || { field: '', operator: 'greater_than', value: '' }), value: e.target.value }]
+                      }))}
                       className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
                     />
                   </div>
@@ -645,16 +735,34 @@ export default function CustomerSegmentation() {
                 onClick={() => {
                   setShowCreateSegment(false)
                   setSelectedSegment(null)
+                  setSegmentForm({ name: '', description: '', criteria: [] })
                 }}
                 className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  setShowCreateSegment(false)
-                  setSelectedSegment(null)
-                  alert('Segment saved successfully!')
+                onClick={async () => {
+                  try {
+                    if (!segmentForm.name.trim()) return alert('Segment name is required')
+                    const payload = {
+                      name: segmentForm.name.trim(),
+                      description: segmentForm.description.trim(),
+                      criteria: segmentForm.criteria,
+                      is_active: true
+                    }
+                    if (selectedSegment) {
+                      await apiService.updateCustomerSegment(selectedSegment.id, payload)
+                    } else {
+                      await apiService.createCustomerSegment(payload)
+                    }
+                    await loadSegmentsData()
+                    setShowCreateSegment(false)
+                    setSelectedSegment(null)
+                    setSegmentForm({ name: '', description: '', criteria: [] })
+                  } catch (e) {
+                    alert('Failed to save segment')
+                  }
                 }}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >

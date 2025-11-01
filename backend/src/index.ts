@@ -9,7 +9,7 @@ import fs from 'fs'
 import { createServer } from 'http'
 import { Server as SocketIOServer } from 'socket.io'
 import { ensureSchema } from './utils/schema'
-import { authenticateToken, sendError, sendSuccess } from './utils/apiHelpers'
+import { authenticateToken, requireRole, requirePermission, sendError, sendSuccess } from './utils/apiHelpers'
 import { createUserActivityTables } from './utils/userActivitySchema'
 import * as productRoutes from './routes/products'
 import * as variantRoutes from './routes/variants'
@@ -17,9 +17,11 @@ import * as inventoryRoutes from './routes/inventory'
 import * as shiprocketRoutes from './routes/shiprocket'
 import * as amazonRoutes from './routes/amazon'
 import * as flipkartRoutes from './routes/flipkart'
+import * as facebookRoutes from './routes/facebook'
 import * as bulkRoutes from './routes/bulk'
 import * as staffRoutes from './routes/staff'
 import * as warehouseRoutes from './routes/warehouses'
+import * as returnRoutes from './routes/returns'
 import * as supplierRoutes from './routes/suppliers'
 import * as posRoutes from './routes/pos'
 import * as cartRoutes from './routes/cart'
@@ -30,14 +32,25 @@ import * as searchRoutes from './routes/search'
 import * as marketingRoutes from './routes/marketing'
 import * as paymentRoutes from './routes/payment'
 import * as userRoutes from './routes/users'
+import * as notificationRoutes from './routes/notifications'
 import { seedCMSContent } from './utils/seedCMS'
 import { updateAllProductsWithPricing } from './utils/updateAllProducts'
+import cron from 'node-cron'
+import { registerExtendedRoutes } from './routes/extended'
+import { registerDashboardAnalyticsRoutes } from './routes/dashboardAnalytics'
+import { registerCommunicationsRoutes } from './routes/communications'
+import { registerIntegrationsRoutes } from './routes/integrations'
+import { registerLiveChatRoutes } from './routes/liveChat'
+import * as recommendationRoutes from './routes/recommendations'
+import * as newsletterRoutes from './routes/newsletter'
 
 // Extend Request interface to include userId
 declare global {
   namespace Express {
     interface Request {
       userId?: string
+      userRole?: string
+      userPermissions?: string[]
       io?: any
     }
   }
@@ -50,14 +63,136 @@ app.use(express.json())
 app.use('/uploads', express.static('uploads'))
 
 // Serve user panel images
-app.use('/IMAGES', express.static(path.join(__dirname, '../user-panel/public/IMAGES')))
+app.use('/IMAGES', express.static(path.join(__dirname, '../../user-panel/public/IMAGES')))
 
 // Debug: Log the path being used
-console.log('Serving IMAGES from:', path.join(__dirname, '../user-panel/public/IMAGES'))
-console.log('Path exists:', fs.existsSync(path.join(__dirname, '../user-panel/public/IMAGES')))
+console.log('Serving IMAGES from:', path.join(__dirname, '../../user-panel/public/IMAGES'))
+console.log('Path exists:', fs.existsSync(path.join(__dirname, '../../user-panel/public/IMAGES')))
 
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://192.168.1.66:5173'
 app.use(cors({ origin: true, credentials: true }))
+
+// Basic in-memory rate limiting (IP-based)
+// Default: 100,000 requests per minute. Set env to override, e.g. RATE_LIMIT_MAX_REQUESTS=1000
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60000) // 1 minute default
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 100000) // Very high default to avoid 429 errors
+const ipToHits: Map<string, { count: number; resetAt: number }> = new Map()
+
+// Cleanup expired rate limit entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of ipToHits.entries()) {
+    if (now > entry.resetAt) {
+      ipToHits.delete(ip)
+    }
+  }
+}, 5 * 60 * 1000)
+
+// Exclude static files and socket.io from rate limiting
+app.use((req, res, next) => {
+  // If disabled, skip rate limiting entirely
+  if (!Number.isFinite(RATE_LIMIT_MAX_REQUESTS) || RATE_LIMIT_MAX_REQUESTS <= 0) {
+    return next()
+  }
+  // Skip rate limiting for static files, socket.io, and uploads
+  if (
+    req.path.startsWith('/uploads/') ||
+    req.path.startsWith('/IMAGES/') ||
+    req.path.startsWith('/socket.io/') ||
+    req.path.match(/\.(css|js|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot)$/i)
+  ) {
+    return next()
+  }
+
+  try {
+    // Try multiple methods to get the client IP
+    const forwardedFor = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+    const ip = forwardedFor || (req as any).ip || req.socket.remoteAddress || req.connection?.remoteAddress || 'unknown'
+    const now = Date.now()
+    const entry = ipToHits.get(ip)
+    if (!entry || now > entry.resetAt) {
+      ipToHits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+      return next()
+    }
+    if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+      res.setHeader('Retry-After', Math.ceil((entry.resetAt - now) / 1000))
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' })
+    }
+    entry.count += 1
+    return next()
+  } catch {
+    return next()
+  }
+})
+
+// Basic admin audit log middleware (logs method, path, userId if present)
+app.use(async (req, _res, next) => {
+  try {
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        id SERIAL PRIMARY KEY,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        user_id TEXT,
+        ip TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+    )
+    // Only log admin and API routes to reduce noise
+    if (req.path.startsWith('/api/')) {
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || null
+      await pool.query(
+        `INSERT INTO admin_audit_logs (method, path, user_id, ip) VALUES ($1, $2, $3, $4)`,
+        [req.method, req.path, req.userId || null, ip]
+      )
+    }
+  } catch (e) {
+    console.error('Audit log error:', e)
+  } finally {
+    next()
+  }
+})
+
+// RBAC context attach middleware creator
+async function attachRBACContext(req: express.Request) {
+  try {
+    if (!req.userId) return
+    // Fetch roles and permissions for staff user
+    const rolesRes = await pool.query(
+      `select r.name as role_name, r.id as role_id
+       from staff_users su
+       left join staff_roles sr on sr.staff_id = su.id
+       left join roles r on r.id = sr.role_id
+       where su.id = $1`,
+      [req.userId]
+    )
+    const roleNames = rolesRes.rows.map((r: any) => r.role_name).filter(Boolean)
+    const roleIds = rolesRes.rows.map((r: any) => r.role_id).filter(Boolean)
+    let perms: string[] = []
+    if (roleIds.length > 0) {
+      const permsRes = await pool.query(
+        `select distinct p.code as code
+         from role_permissions rp
+         join permissions p on p.id = rp.permission_id
+         where rp.role_id = any($1::int[])`,
+        [roleIds]
+      )
+      perms = permsRes.rows.map((p: any) => p.code)
+    }
+    ;(req as any).userRole = roleNames.includes('admin') ? 'admin' : (roleNames[0] || undefined)
+    ;(req as any).userPermissions = perms
+  } catch (e) {
+    console.error('RBAC attach failed:', e)
+  }
+}
+
+// Combined authenticate + RBAC attach middleware
+function authenticateAndAttach(req: express.Request, res: express.Response, next: Function) {
+  authenticateToken(req, res, async () => {
+    await attachRBACContext(req)
+    next()
+  })
+}
 
 // Create HTTP server and Socket.IO
 const server = createServer(app)
@@ -73,6 +208,106 @@ const io = new SocketIOServer(server, {
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/nefol'
 const pool = new Pool({ connectionString })
+
+// Middleware to allow staff with permissions OR regular authenticated users to create orders
+function allowOrderCreation(req: express.Request, res: express.Response, next: Function) {
+  authenticateToken(req, res, async () => {
+    await attachRBACContext(req)
+    
+    // Check if user is staff with orders:create permission
+    const attached = (req as any).userPermissions as string[] | undefined
+    const userPerms = attached && Array.isArray(attached)
+      ? attached
+      : ((req.headers['x-user-permissions'] as string) || '').split(',').map(s => s.trim()).filter(Boolean)
+    
+    const hasPermission = userPerms.includes('orders:create')
+    
+    if (hasPermission) {
+      // Staff user with permission - allow
+      return next()
+    }
+    
+    // Check if user is a regular user from users table
+    if (req.userId) {
+      try {
+        const userResult = await pool.query(
+          'SELECT id, email FROM users WHERE id = $1',
+          [req.userId]
+        )
+        
+        if (userResult.rows.length > 0) {
+          // Regular user - allow them to create orders (for themselves)
+          return next()
+        }
+      } catch (e) {
+        console.error('Error checking regular user:', e)
+      }
+    }
+    
+    // Neither staff with permission nor regular user - deny
+    return sendError(res, 403, 'Forbidden')
+  })
+}
+
+// Middleware to allow staff with permissions OR regular authenticated users to view their own orders
+function allowOrderView(req: express.Request, res: express.Response, next: Function) {
+  authenticateToken(req, res, async () => {
+    await attachRBACContext(req)
+    
+    // Check if user is staff with orders:read permission
+    const attached = (req as any).userPermissions as string[] | undefined
+    const userPerms = attached && Array.isArray(attached)
+      ? attached
+      : ((req.headers['x-user-permissions'] as string) || '').split(',').map(s => s.trim()).filter(Boolean)
+    
+    const hasPermission = userPerms.includes('orders:read')
+    
+    if (hasPermission) {
+      // Staff user with permission - allow viewing any order
+      return next()
+    }
+    
+    // Check if user is a regular user viewing their own order
+    if (req.userId) {
+      try {
+        // Get user's email
+        const userResult = await pool.query(
+          'SELECT id, email FROM users WHERE id = $1',
+          [req.userId]
+        )
+        
+        if (userResult.rows.length > 0) {
+          const userEmail = userResult.rows[0].email
+          const { orderNumber } = req.params
+          
+          // Check if the order belongs to this user
+          let orderResult = await pool.query(
+            'SELECT customer_email FROM orders WHERE order_number = $1',
+            [orderNumber]
+          )
+          
+          // Also check by ID if orderNumber is numeric
+          if (orderResult.rows.length === 0 && /^\d+$/.test(orderNumber)) {
+            orderResult = await pool.query(
+              'SELECT customer_email FROM orders WHERE id = $1',
+              [orderNumber]
+            )
+          }
+          
+          if (orderResult.rows.length > 0 && orderResult.rows[0].customer_email === userEmail) {
+            // Regular user viewing their own order - allow
+            return next()
+          }
+        }
+      } catch (e) {
+        console.error('Error checking order ownership:', e)
+      }
+    }
+    
+    // Neither staff with permission nor regular user viewing own order - deny
+    return sendError(res, 403, 'Forbidden')
+  })
+}
 
 // Create a simple db object for compatibility
 const db = {
@@ -170,6 +405,15 @@ io.on('connection', (socket) => {
     socket.join('all-users')
     console.log('👥 User joined all-users room:', socket.id)
   })
+
+  // Live chat: join a specific session room so both panels receive realtime events
+  socket.on('live-chat:join-session', (data: any) => {
+    const { sessionId } = data || {}
+    if (!sessionId) return
+    const room = `live-chat-session-${sessionId}`
+    socket.join(room)
+    console.log('💬 Joined live chat session room:', room, 'socket:', socket.id)
+  })
   
   // Page view tracking
   socket.on('page-view', (data: any) => {
@@ -256,6 +500,13 @@ io.on('connection', (socket) => {
       data 
     })
   })
+
+  socket.on('live-chat:typing', (data: any) => {
+    const { sessionId, sender, isTyping } = data || {}
+    if (sessionId) {
+      io.to(`live-chat-session-${sessionId}`).emit('live-chat:typing', { sessionId, sender, isTyping: !!isTyping })
+    }
+  })
   
   // Handle disconnect
   socket.on('disconnect', (reason) => {
@@ -317,7 +568,7 @@ app.get('/api/products', (req, res) => productRoutes.getProducts(pool, res))
 app.get('/api/products/:id', (req, res) => productRoutes.getProductById(pool, req, res))
 app.get('/api/products/slug/:slug', (req, res) => productRoutes.getProductBySlug(pool, req, res))
 app.post('/api/products', (req, res) => productRoutes.createProduct(pool, req, res))
-app.put('/api/products/:id', (req, res) => productRoutes.updateProduct(pool, req, res))
+app.put('/api/products/:id', (req, res) => productRoutes.updateProduct(pool, req, res, io))
 app.delete('/api/products/:id', (req, res) => productRoutes.deleteProduct(pool, req, res))
 
 // Product images endpoints
@@ -351,9 +602,16 @@ app.post('/api/inventory/:productId/:variantId/low-threshold', (req, res) => inv
 app.get('/api/inventory/low-stock', (req, res) => inventoryRoutes.listLowStock(pool, req, res))
 
 // ==================== SHIPROCKET ====================
-app.post('/api/shiprocket/config', (req, res) => shiprocketRoutes.saveShiprocketConfig(pool, req, res))
-app.post('/api/shiprocket/orders/:orderId/awb', (req, res) => shiprocketRoutes.createAwbAndLabel(pool, req, res))
-app.get('/api/shiprocket/orders/:orderId/track', (req, res) => shiprocketRoutes.trackShipment(pool, req, res))
+app.get('/api/shiprocket/config', authenticateAndAttach as any, requireRole(['admin']), (req, res) => shiprocketRoutes.getShiprocketConfig(pool, req, res))
+app.post('/api/shiprocket/config', authenticateAndAttach as any, requireRole(['admin']), (req, res) => shiprocketRoutes.saveShiprocketConfig(pool, req, res))
+app.post('/api/shiprocket/orders/:orderId/awb', authenticateAndAttach as any, requirePermission(['orders:update']), (req, res) => shiprocketRoutes.createAwbAndLabel(pool, req, res))
+app.get('/api/shiprocket/orders/:orderId/track', authenticateAndAttach as any, requirePermission(['orders:read']), (req, res) => shiprocketRoutes.trackShipment(pool, req, res))
+app.get('/api/shiprocket/serviceability', authenticateAndAttach as any, requirePermission(['shipping:read']), (req, res) => shiprocketRoutes.checkPincodeServiceability(pool, req, res))
+app.post('/api/shiprocket/manifest', authenticateAndAttach as any, requirePermission(['shipping:update']), (req, res) => shiprocketRoutes.createManifest(pool, req, res))
+app.post('/api/shiprocket/pickup', authenticateAndAttach as any, requirePermission(['shipping:update']), (req, res) => shiprocketRoutes.schedulePickup(pool, req, res))
+app.get('/api/shiprocket/ndr', authenticateAndAttach as any, requirePermission(['shipping:read']), (req, res) => shiprocketRoutes.listNdr(pool, req, res))
+app.post('/api/shiprocket/ndr/:awb/action', authenticateAndAttach as any, requirePermission(['shipping:update']), (req, res) => shiprocketRoutes.actOnNdr(pool, req, res))
+app.post('/api/shiprocket/rto/:orderId', authenticateAndAttach as any, requirePermission(['shipping:update']), (req, res) => shiprocketRoutes.markRto(pool, req, res))
 
 // ==================== AMAZON ====================
 app.post('/api/marketplaces/amazon/accounts', (req, res) => amazonRoutes.saveAmazonAccount(pool, req, res))
@@ -368,12 +626,35 @@ app.post('/api/marketplaces/flipkart/sync-products', (req, res) => flipkartRoute
 app.get('/api/marketplaces/flipkart/import-orders', (req, res) => flipkartRoutes.importFlipkartOrders(pool, req, res))
 
 // ==================== BULK OPS ====================
-app.post('/api/bulk/orders/status', (req, res) => bulkRoutes.bulkUpdateOrderStatus(pool, req, res))
-app.post('/api/bulk/shipping/labels', (req, res) => bulkRoutes.bulkGenerateShippingLabels(pool, req, res))
-app.post('/api/bulk/invoices/download', (req, res) => bulkRoutes.bulkDownloadInvoices(pool, req, res))
-app.post('/api/bulk/products/prices', (req, res) => bulkRoutes.bulkUpdateProductPrices(pool, req, res))
+app.post('/api/bulk/orders/status', authenticateAndAttach as any, requirePermission(['orders:update']), (req, res) => bulkRoutes.bulkUpdateOrderStatus(pool, req, res))
+app.post('/api/bulk/shipping/labels', authenticateAndAttach as any, requirePermission(['shipping:update']), (req, res) => bulkRoutes.bulkGenerateShippingLabels(pool, req, res))
+app.post('/api/bulk/invoices/download', authenticateAndAttach as any, requirePermission(['invoices:read']), (req, res) => bulkRoutes.bulkDownloadInvoices(pool, req, res))
+app.post('/api/bulk/products/prices', authenticateAndAttach as any, requirePermission(['products:update']), (req, res) => bulkRoutes.bulkUpdateProductPrices(pool, req, res))
 
 // ==================== STAFF & PERMISSIONS ====================
+// ==================== RETURNS & REFUNDS ====================
+// ==================== FACEBOOK / INSTAGRAM SHOP ====================
+app.post('/api/fb-shop/config', (req, res) => facebookRoutes.saveConfig(pool, req, res))
+app.get('/api/facebook/catalog.csv', (req, res) => facebookRoutes.catalogCSV(pool, req, res))
+app.post('/api/facebook/sync-products', (req, res) => facebookRoutes.syncAllProducts(pool, req, res))
+app.post('/api/facebook/sync-stock-price', (req, res) => facebookRoutes.syncStockPrice(pool, req, res))
+app.get('/api/facebook/sync/status/:id', (req, res) => facebookRoutes.jobStatus(pool, req, res))
+app.get('/api/facebook/sync-errors', (req, res) => facebookRoutes.listErrors(pool, req, res))
+app.post('/api/facebook/sync-errors/clear', (req, res) => facebookRoutes.clearErrors(pool, req, res))
+app.post('/api/facebook/field-mapping', (req, res) => facebookRoutes.saveFieldMapping(pool, req, res))
+app.get('/api/facebook/field-mapping', (req, res) => facebookRoutes.getFieldMapping(pool, req, res))
+app.post('/api/facebook/webhook', (req, res) => facebookRoutes.webhook(pool, req, res))
+
+// ==================== NOTIFICATIONS (WhatsApp + SMTP) ====================
+app.get('/api/alerts/config', (req, res) => notificationRoutes.getConfig(pool, req, res))
+app.post('/api/alerts/config', (req, res) => notificationRoutes.saveConfig(pool, req, res))
+app.post('/api/alerts/test/whatsapp', (req, res) => notificationRoutes.testWhatsApp(pool, req, res))
+app.post('/api/alerts/test/email', (req, res) => notificationRoutes.testEmail(pool, req, res))
+app.get('/api/returns', authenticateAndAttach as any, requirePermission(['returns:read']), (req, res) => returnRoutes.listReturns(pool, req, res))
+app.post('/api/returns', authenticateAndAttach as any, requirePermission(['returns:create']), (req, res) => returnRoutes.createReturn(pool, req, res))
+app.put('/api/returns/:id/status', authenticateAndAttach as any, requirePermission(['returns:update']), (req, res) => returnRoutes.updateReturnStatus(pool, req, res))
+app.post('/api/returns/:id/label', authenticateAndAttach as any, requirePermission(['returns:update']), (req, res) => returnRoutes.generateReturnLabel(pool, req, res))
+
 app.post('/api/staff/roles', (req, res) => staffRoutes.createRole(pool, req, res))
 app.get('/api/staff/roles', (req, res) => staffRoutes.listRoles(pool, req, res))
 app.post('/api/staff/permissions', (req, res) => staffRoutes.createPermission(pool, req, res))
@@ -381,6 +662,13 @@ app.post('/api/staff/role-permissions', (req, res) => staffRoutes.assignPermissi
 app.post('/api/staff/users', (req, res) => staffRoutes.createStaff(pool, req, res))
 app.post('/api/staff/user-roles', (req, res) => staffRoutes.assignRoleToStaff(pool, req, res))
 app.get('/api/staff/users', (req, res) => staffRoutes.listStaff(pool, req, res))
+app.get('/api/staff/permissions', (req, res) => staffRoutes.listPermissions(pool, req, res))
+app.get('/api/staff/role-permissions', (req, res) => staffRoutes.getRolePermissions(pool, req, res))
+app.post('/api/staff/role-permissions/set', (req, res) => staffRoutes.setRolePermissions(pool, req, res))
+app.get('/api/staff/activity', (req, res) => staffRoutes.listStaffActivity(pool, req, res))
+app.post('/api/staff/users/reset-password', (req, res) => staffRoutes.resetPassword(pool, req, res))
+app.post('/api/staff/users/disable', (req, res) => staffRoutes.disableStaff(pool, req, res))
+app.post('/api/staff/seed-standard', (req, res) => staffRoutes.seedStandardRolesAndPermissions(pool, req, res))
 
 // ==================== WAREHOUSES ====================
 app.post('/api/warehouses', (req, res) => warehouseRoutes.createWarehouse(pool, req, res))
@@ -406,97 +694,36 @@ app.get('/api/barcodes/scan', (req, res) => posRoutes.scanBarcode(pool, req, res
 app.get('/api/search', (req, res) => searchRoutes.searchProducts(pool, req, res))
 app.get('/api/search/filters', (req, res) => searchRoutes.getSearchFilters(pool, req, res))
 app.post('/api/search/log', (req, res) => searchRoutes.logSearchQuery(pool, req, res))
+app.post('/api/search/track', (req, res) => recommendationRoutes.trackSearch(pool, req, res))
+app.get('/api/search/popular', (req, res) => recommendationRoutes.getPopularSearches(pool, req, res))
 
-// CSV endpoints (FIXED PATH)
-app.get('/api/products-csv', async (req, res) => {
-  try {
-    const path = require('path')
-    const fs = require('fs')
-    
-    // FIXED: Correct path to CSV file (backend runs from backend/, so go up 1 level)
-    const csvPath = path.resolve(process.cwd(), '..', 'product description page.csv')
-    
-    console.log('🔍 CSV Debug Info:')
-    console.log('  Current working directory:', process.cwd())
-    console.log('  Resolved CSV path:', csvPath)
-    console.log('  File exists:', fs.existsSync(csvPath))
-    
-    if (!fs.existsSync(csvPath)) {
-      console.warn('❌ CSV file not found at:', csvPath)
-      return sendSuccess(res, [])
-    }
-    
-    console.log('✅ CSV file found, reading content...')
-    
-    const raw = fs.readFileSync(csvPath, 'utf8')
-    const lines = raw.split(/\r?\n/).filter((l: string) => l.trim().length > 0)
-    
-    console.log('📊 CSV Content Info:')
-    console.log('  Raw content length:', raw.length)
-    console.log('  Total lines:', lines.length)
-    console.log('  First line:', lines[0]?.substring(0, 100) + '...')
-    
-    if (lines.length === 0) {
-      console.warn('❌ No lines found in CSV')
-      return sendSuccess(res, [])
-    }
-    
-    const parseCSVLine = (line: string): string[] => {
-      const result: string[] = []
-      let current = ''
-      let inQuotes = false
-      
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i]
-        
-        if (char === '"') {
-          if (inQuotes && line[i + 1] === '"') {
-            current += '"'
-            i++
-          } else {
-            inQuotes = !inQuotes
-          }
-        } else if (char === ',' && !inQuotes) {
-          result.push(current.trim())
-          current = ''
-        } else {
-          current += char
-        }
-      }
-      
-      result.push(current.trim())
-      return result
-    }
-    
-    const headerLine = lines[0]
-    const headers = parseCSVLine(headerLine)
-    const rows: any[] = []
-    
-    console.log('📋 CSV Parsing Info:')
-    console.log('  Headers count:', headers.length)
-    console.log('  First header:', headers[0])
-    
-    for (let i = 1; i < lines.length; i++) {
-      const parts = parseCSVLine(lines[i])
-      if (parts.every(p => p.trim() === '')) continue
-      
-      const obj: any = {}
-      for (let j = 0; j < headers.length; j++) {
-        obj[headers[j]] = (parts[j] ?? '').trim()
-      }
-      rows.push(obj)
-    }
-    
-    console.log('📦 Final Results:')
-    console.log('  Parsed products:', rows.length)
-    console.log('  First product:', rows[0]?.['Product Name'])
-    
-    sendSuccess(res, rows)
-  } catch (err) {
-    console.error('❌ CSV Error:', err)
-    sendError(res, 500, 'Failed to read products CSV', err)
-  }
+// ==================== RECOMMENDATIONS & RECENTLY VIEWED ====================
+app.post('/api/products/:productId/view', (req, res) => recommendationRoutes.trackProductView(pool, req, res))
+app.get('/api/recommendations/recently-viewed', (req, res) => recommendationRoutes.getRecentlyViewed(pool, req, res))
+app.get('/api/recommendations/related/:productId', (req, res) => recommendationRoutes.getRelatedProducts(pool, req, res))
+app.get('/api/recommendations', (req, res) => recommendationRoutes.getRecommendedProducts(pool, req, res))
+
+// ==================== NEWSLETTER & WHATSAPP ====================
+app.post('/api/newsletter/subscribe', (req, res) => {
+  (req as any).io = io
+  newsletterRoutes.subscribeNewsletter(pool, req, res)
 })
+app.post('/api/newsletter/unsubscribe', (req, res) => newsletterRoutes.unsubscribeNewsletter(pool, req, res))
+app.post('/api/whatsapp/subscribe', (req, res) => {
+  (req as any).io = io
+  newsletterRoutes.subscribeWhatsApp(pool, req, res)
+})
+app.post('/api/whatsapp/unsubscribe', (req, res) => newsletterRoutes.unsubscribeWhatsApp(pool, req, res))
+app.get('/api/whatsapp/subscriptions', authenticateAndAttach as any, requireRole(['admin']), (req, res) => newsletterRoutes.getWhatsAppSubscriptions(pool, req, res))
+app.get('/api/whatsapp/stats', authenticateAndAttach as any, requireRole(['admin']), (req, res) => newsletterRoutes.getWhatsAppStats(pool, req, res))
+app.get('/api/newsletter/stats', authenticateAndAttach as any, requireRole(['admin']), (req, res) => newsletterRoutes.getNewsletterStats(pool, req, res))
+
+// Register extended modular routes (extracted from this file)
+registerExtendedRoutes(app, pool, io)
+registerDashboardAnalyticsRoutes(app, pool)
+registerCommunicationsRoutes(app, pool, io)
+registerIntegrationsRoutes(app, pool)
+registerLiveChatRoutes(app, pool, io)
 
 // ==================== OPTIMIZED CART API ====================
 app.get('/api/cart', authenticateToken, (req, res) => cartRoutes.getCart(pool, req, res))
@@ -520,7 +747,6 @@ app.put('/api/users/profile', authenticateToken, (req, res) => cartRoutes.update
 
 // Saved cards endpoint
 app.get('/api/users/saved-cards', authenticateToken, (req, res) => {
-  // Return empty array for now - can be implemented later
   res.json({ success: true, data: [] })
 })
 
@@ -605,26 +831,7 @@ app.get('/api/analytics-data', async (req, res) => {
 })
 
 // Cashback balance endpoint
-app.get('/api/cashback/balance', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.userId
-    
-    // Get user's cashback balance from orders (5% of total spent)
-    const { rows } = await pool.query(`
-      SELECT COALESCE(SUM(total * 0.05), 0) as balance
-      FROM orders 
-      WHERE customer_email = (
-        SELECT email FROM users WHERE id = $1
-      )
-    `, [userId])
-    
-    const balance = rows[0]?.balance || 0
-    
-    sendSuccess(res, { balance })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch cashback balance', err)
-  }
-})
+// moved to routes/extended.ts: /api/cashback/balance
 
 // Helper function to record coin transactions
 async function recordCoinTransaction(
@@ -650,293 +857,21 @@ async function recordCoinTransaction(
 }
 
 // Nefol coins (loyalty points) endpoint
-app.get('/api/nefol-coins', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.userId
-    
-    // Get user's loyalty points (Nefol coins)
-    const { rows } = await pool.query(`
-      SELECT loyalty_points as nefol_coins
-      FROM users 
-      WHERE id = $1
-    `, [userId])
-    
-    const nefolCoins = rows[0]?.nefol_coins || 0
-    
-    sendSuccess(res, { nefol_coins: nefolCoins })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch Nefol coins', err)
-  }
-})
+// moved to routes/extended.ts: /api/nefol-coins
 
 // Get user's coin transaction history
-app.get('/api/coin-transactions', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.userId
-    const { limit = 50 } = req.query
-    
-    const { rows } = await pool.query(`
-      SELECT 
-        id,
-        amount,
-        type,
-        description,
-        status,
-        order_id,
-        withdrawal_id,
-        metadata,
-        created_at
-      FROM coin_transactions
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT $2
-    `, [userId, limit])
-    
-    // Return data in consistent format
-    sendSuccess(res, { data: rows })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch coin transactions', err)
-  }
-})
+// moved to routes/extended.ts: /api/coin-transactions
 
 // ==================== COIN WITHDRAWAL API ====================
 // Get user's withdrawal history
-app.get('/api/coin-withdrawals', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.userId
-    
-    const { rows } = await pool.query(`
-      SELECT 
-        id,
-        amount,
-        withdrawal_method,
-        account_holder_name,
-        account_number,
-        ifsc_code,
-        bank_name,
-        upi_id,
-        status,
-        transaction_id,
-        admin_notes,
-        rejection_reason,
-        created_at,
-        processed_at
-      FROM coin_withdrawals
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-    `, [userId])
-    
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch withdrawal history', err)
-  }
-})
+// moved to routes/extended.ts: /api/coin-withdrawals (GET, POST) and admin processing
 
 // Create withdrawal request
-app.post('/api/coin-withdrawals', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.userId
-    if (!userId) {
-      return sendError(res, 401, 'User ID not found')
-    }
-    
-    const {
-      amount,
-      withdrawal_method,
-      account_holder_name,
-      account_number,
-      ifsc_code,
-      bank_name,
-      upi_id
-    } = req.body
-    
-    // Validate required fields
-    if (!amount || amount <= 0) {
-      return sendError(res, 400, 'Valid amount is required')
-    }
-    
-    if (!withdrawal_method || !['bank', 'upi'].includes(withdrawal_method)) {
-      return sendError(res, 400, 'Valid withdrawal method is required')
-    }
-    
-    if (withdrawal_method === 'bank' && (!account_number || !ifsc_code || !bank_name)) {
-      return sendError(res, 400, 'Bank details are required for bank transfer')
-    }
-    
-    if (withdrawal_method === 'upi' && !upi_id) {
-      return sendError(res, 400, 'UPI ID is required for UPI transfer')
-    }
-    
-    if (!account_holder_name) {
-      return sendError(res, 400, 'Account holder name is required')
-    }
-    
-    // Check user has enough coins
-    const userResult = await pool.query(`
-      SELECT loyalty_points FROM users WHERE id = $1
-    `, [userId])
-    
-    const availableCoins = userResult.rows[0]?.loyalty_points || 0
-    
-    if (availableCoins < amount) {
-      return sendError(res, 400, 'Insufficient coins. You have ' + availableCoins + ' coins available.')
-    }
-    
-    // Create withdrawal request
-    const insertValues = [
-      userId,
-      amount,
-      withdrawal_method,
-      account_holder_name
-    ]
-    
-    if (withdrawal_method === 'bank') {
-      insertValues.push(account_number, ifsc_code, bank_name, null)
-    } else {
-      insertValues.push(null, null, null, upi_id)
-    }
-    
-    const { rows } = await pool.query(`
-      INSERT INTO coin_withdrawals (
-        user_id, amount, withdrawal_method, account_holder_name,
-        account_number, ifsc_code, bank_name, upi_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-      RETURNING *
-    `, insertValues)
-    
-    // Deduct coins from user's account
-    await pool.query(`
-      UPDATE users 
-      SET loyalty_points = loyalty_points - $1
-      WHERE id = $2
-    `, [amount, userId])
-    
-    // Record transaction using helper function
-    await recordCoinTransaction(
-      pool,
-      userId,
-      amount,
-      'withdrawal_pending',
-      `Withdrawal requested via ${withdrawal_method === 'bank' ? 'Bank Transfer' : 'UPI'}`,
-      'pending',
-      undefined,
-      rows[0].id
-    )
-    
-    sendSuccess(res, rows[0], 201)
-  } catch (err) {
-    sendError(res, 500, 'Failed to create withdrawal request', err)
-  }
-})
 
 // Get all withdrawal requests (admin only)
-app.get('/api/admin/coin-withdrawals', async (req, res) => {
-  try {
-    const { status } = req.query
-    let query = `
-      SELECT 
-        w.*,
-        u.name as user_name,
-        u.email as user_email,
-        u.phone as user_phone
-      FROM coin_withdrawals w
-      JOIN users u ON w.user_id = u.id
-      WHERE 1=1
-    `
-    const values: any[] = []
-    
-    if (status) {
-      query += ` AND w.status = $${values.length + 1}`
-      values.push(status)
-    }
-    
-    query += ` ORDER BY w.created_at DESC`
-    
-    const { rows } = await pool.query(query, values)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch withdrawal requests', err)
-  }
-})
 
 // Process withdrawal (admin only)
-app.put('/api/admin/coin-withdrawals/:id/process', async (req, res) => {
-  try {
-    const withdrawalId = req.params.id
-    const { status, transaction_id, admin_notes, rejection_reason } = req.body
-    
-    if (!status || !['processing', 'completed', 'rejected', 'failed'].includes(status)) {
-      return sendError(res, 400, 'Valid status is required')
-    }
-    
-    const updateFields: string[] = []
-    const values: any[] = []
-    
-    updateFields.push(`status = $${values.length + 1}`)
-    values.push(status)
-    
-    if (transaction_id) {
-      updateFields.push(`transaction_id = $${values.length + 1}`)
-      values.push(transaction_id)
-    }
-    
-    if (admin_notes) {
-      updateFields.push(`admin_notes = $${values.length + 1}`)
-      values.push(admin_notes)
-    }
-    
-    if (rejection_reason) {
-      updateFields.push(`rejection_reason = $${values.length + 1}`)
-      values.push(rejection_reason)
-    }
-    
-    if (['completed', 'rejected', 'failed'].includes(status)) {
-      updateFields.push(`processed_at = NOW()`)
-    }
-    
-    values.push(withdrawalId)
-    
-    const { rows } = await pool.query(`
-      UPDATE coin_withdrawals
-      SET ${updateFields.join(', ')}, updated_at = NOW()
-      WHERE id = $${values.length}
-      RETURNING *
-    `, values)
-    
-    if (rows.length === 0) {
-      return sendError(res, 404, 'Withdrawal request not found')
-    }
-    
-    // If rejected or failed, refund coins to user
-    if (['rejected', 'failed'].includes(status)) {
-      await pool.query(`
-        UPDATE users
-        SET loyalty_points = loyalty_points + $1
-        WHERE id = $2
-      `, [rows[0].amount, rows[0].user_id])
-    }
-    
-    // Update transaction status
-    let transactionType = 'withdrawal_pending'
-    if (status === 'processing') {
-      transactionType = 'withdrawal_processing'
-    } else if (status === 'completed') {
-      transactionType = 'withdrawal_completed'
-    } else if (status === 'rejected' || status === 'failed') {
-      transactionType = 'withdrawal_rejected'
-    }
-    
-    await pool.query(`
-      UPDATE coin_transactions
-      SET type = $1, status = $2, updated_at = NOW()
-      WHERE withdrawal_id = $3
-    `, [transactionType, status, withdrawalId])
-    
-    sendSuccess(res, rows[0])
-  } catch (err) {
-    sendError(res, 500, 'Failed to process withdrawal', err)
-  }
-})
+ 
 
 // ==================== PAYMENT API ====================
 app.get('/api/payment-gateways', async (req, res) => {
@@ -1247,6 +1182,79 @@ app.get('/api/discounts/usage', async (req, res) => {
   }
 })
 
+// Apply discount code endpoint
+app.post('/api/discounts/apply', async (req, res) => {
+  try {
+    const { code, amount } = req.body || {}
+    
+    if (!code || !amount) {
+      return sendError(res, 400, 'Discount code and order amount are required')
+    }
+
+    // Find the discount by code
+    const discountResult = await pool.query(
+      `SELECT * FROM discounts WHERE code = $1 AND is_active = true`,
+      [code.toUpperCase()]
+    )
+
+    if (discountResult.rows.length === 0) {
+      return sendError(res, 404, 'Invalid or inactive discount code')
+    }
+
+    const discount = discountResult.rows[0]
+    const now = new Date()
+
+    // Check if discount is within validity period
+    if (discount.valid_from && new Date(discount.valid_from) > now) {
+      return sendError(res, 400, 'Discount code is not yet valid')
+    }
+
+    if (discount.valid_until && new Date(discount.valid_until) < now) {
+      return sendError(res, 400, 'Discount code has expired')
+    }
+
+    // Check minimum purchase amount
+    if (discount.min_purchase && amount < parseFloat(discount.min_purchase)) {
+      return sendError(res, 400, `Minimum purchase amount of ₹${discount.min_purchase} required`)
+    }
+
+    // Check usage limit
+    if (discount.usage_limit && discount.usage_count >= discount.usage_limit) {
+      return sendError(res, 400, 'Discount code usage limit reached')
+    }
+
+    // Calculate discount amount
+    let discountAmount = 0
+    if (discount.type === 'percentage') {
+      discountAmount = (amount * parseFloat(discount.value)) / 100
+      // Apply max discount limit if set
+      if (discount.max_discount && discountAmount > parseFloat(discount.max_discount)) {
+        discountAmount = parseFloat(discount.max_discount)
+      }
+    } else if (discount.type === 'fixed') {
+      discountAmount = parseFloat(discount.value)
+      // Don't allow discount to exceed order amount
+      if (discountAmount > amount) {
+        discountAmount = amount
+      }
+    }
+
+    // Return discount details
+    sendSuccess(res, {
+      id: discount.id,
+      code: discount.code,
+      name: discount.name,
+      type: discount.type,
+      value: parseFloat(discount.value),
+      discountAmount: Math.round(discountAmount * 100) / 100,
+      maxDiscount: discount.max_discount ? parseFloat(discount.max_discount) : null
+    })
+  } catch (err) {
+    console.error('Error applying discount:', err)
+    sendError(res, 500, 'Failed to apply discount code', err)
+  }
+})
+
 // Marketing campaigns endpoint
 app.get('/api/marketing/campaigns', async (req, res) => {
   try {
@@ -1394,6 +1402,51 @@ app.get('/api/loyalty-program', async (req, res) => {
   }
 })
 
+// Create loyalty program
+app.post('/api/loyalty-program', async (req, res) => {
+  try {
+    const { name, description, points_per_rupee, referral_bonus, vip_threshold, status } = req.body || {}
+    if (!name) {
+      return sendError(res, 400, 'name is required')
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO loyalty_program (name, description, points_per_rupee, referral_bonus, vip_threshold, status)
+       VALUES ($1, $2, COALESCE($3, 1), COALESCE($4, 0), COALESCE($5, 0), COALESCE($6, 'active'))
+       RETURNING *`,
+      [name, description || null, points_per_rupee, referral_bonus, vip_threshold, status]
+    )
+    sendSuccess(res, rows[0], 201)
+  } catch (err) {
+    sendError(res, 500, 'Failed to create loyalty program', err)
+  }
+})
+
+// Update loyalty program
+app.put('/api/loyalty-program/:id', async (req, res) => {
+  try {
+    const { id } = req.params as any
+    const { name, description, points_per_rupee, referral_bonus, vip_threshold, status } = req.body || {}
+    const { rows } = await pool.query(
+      `UPDATE loyalty_program
+       SET 
+         name = COALESCE($2, name),
+         description = COALESCE($3, description),
+         points_per_rupee = COALESCE($4, points_per_rupee),
+         referral_bonus = COALESCE($5, referral_bonus),
+         vip_threshold = COALESCE($6, vip_threshold),
+         status = COALESCE($7, status),
+         updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id, name, description, points_per_rupee, referral_bonus, vip_threshold, status]
+    )
+    if (!rows[0]) return sendError(res, 404, 'Loyalty program not found')
+    sendSuccess(res, rows[0])
+  } catch (err) {
+    sendError(res, 500, 'Failed to update loyalty program', err)
+  }
+})
+
 // Register all CRUD routes
 tables.forEach(({ name, required }) => {
   const handler = createCRUDHandler(name, required)
@@ -1427,12 +1480,11 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 })
 
 // CSV upload endpoint (FIXED PATH)
+// CSV upload endpoint (FIXED PATH)
 app.post('/api/products-csv/upload', upload.single('file'), async (req, res) => {
   try {
     const file = (req as any).file as Express.Multer.File | undefined
     if (!file) return sendError(res, 400, 'No file uploaded')
-    
-    // FIXED: Correct path to CSV file (backend runs from backend/, so go up 1 level)
     const destPath = path.resolve(process.cwd(), '..', 'product description page.csv')
     fs.copyFileSync(file.path, destPath)
     sendSuccess(res, { ok: true })
@@ -1524,31 +1576,180 @@ app.delete('/api/wishlist/:productId', async (req, res) => {
 })
 
 // Orders endpoints (simplified)
-app.get('/api/orders', async (req, res) => {
+app.get('/api/orders', authenticateAndAttach as any, requirePermission(['orders:read']), async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM orders ORDER BY created_at DESC')
+    const { status, q, from, to, customer, page = '1', limit = '50', payment_status, cod } = req.query as Record<string, string>
+    const where: string[] = []
+    const params: any[] = []
+    if (status) {
+      params.push(status)
+      where.push(`status = $${params.length}`)
+    }
+    if (payment_status) {
+      params.push(payment_status)
+      where.push(`payment_status = $${params.length}`)
+    }
+    if (typeof cod !== 'undefined') {
+      params.push(cod === 'true')
+      where.push(`coalesce(cod, false) = $${params.length}`)
+    }
+    if (customer) {
+      params.push(`%${customer}%`)
+      where.push(`(customer_name ILIKE $${params.length} OR customer_email ILIKE $${params.length})`)
+    }
+    if (q) {
+      params.push(`%${q}%`)
+      where.push(`(order_number ILIKE $${params.length})`)
+    }
+    if (from) {
+      params.push(from)
+      where.push(`created_at >= $${params.length}`)
+    }
+    if (to) {
+      params.push(to)
+      where.push(`created_at <= $${params.length}`)
+    }
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1)
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit as string, 10) || 50))
+    const offset = (pageNum - 1) * limitNum
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const { rows } = await pool.query(
+      `SELECT * FROM orders ${whereSql} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limitNum, offset]
+    )
     sendSuccess(res, rows)
   } catch (err) {
     sendError(res, 500, 'Failed to fetch orders', err)
   }
 })
 
-app.get('/api/orders/:orderNumber', async (req, res) => {
+// Orders CSV export
+app.get('/api/orders/export', authenticateAndAttach as any, requirePermission(['orders:read']), async (req, res) => {
+  try {
+    const { status, q, from, to, customer } = req.query as Record<string, string>
+    const where: string[] = []
+    const params: any[] = []
+    if (status) { params.push(status); where.push(`status = $${params.length}`) }
+    if (customer) { params.push(`%${customer}%`); where.push(`(customer_name ILIKE $${params.length} OR customer_email ILIKE $${params.length})`) }
+    if (q) { params.push(`%${q}%`); where.push(`(order_number ILIKE $${params.length})`) }
+    if (from) { params.push(from); where.push(`created_at >= $${params.length}`) }
+    if (to) { params.push(to); where.push(`created_at <= $${params.length}`) }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const { rows } = await pool.query(`SELECT * FROM orders ${whereSql} ORDER BY created_at DESC`, params)
+    const headers = ['order_number','customer_name','customer_email','status','subtotal','shipping','tax','total','created_at']
+    const csv = [headers.join(',')].concat(
+      rows.map(r => headers.map(h => {
+        const v = r[h]
+        if (v == null) return ''
+        const s = String(v).replace(/"/g, '""')
+        return /[,"]/.test(s) ? `"${s}"` : s
+      }).join(','))
+    ).join('\n')
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', 'attachment; filename="orders.csv"')
+    res.send(csv)
+  } catch (err) {
+    sendError(res, 500, 'Failed to export orders', err)
+  }
+})
+
+app.get('/api/orders/:orderNumber', allowOrderView as any, async (req, res) => {
   try {
     const { orderNumber } = req.params
-    const { rows } = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber])
+    let rowsRes = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber])
+    if (rowsRes.rows.length === 0 && /^\d+$/.test(orderNumber)) {
+      rowsRes = await pool.query('SELECT * FROM orders WHERE id = $1', [orderNumber])
+    }
+    const rows = rowsRes.rows
     
     if (rows.length === 0) {
       return sendError(res, 404, 'Order not found')
     }
-    
-    sendSuccess(res, rows[0])
+    // Include items and status history if available
+    let history: any[] = []
+    try {
+      const h = await pool.query('SELECT * FROM order_status_history WHERE order_id = $1 ORDER BY created_at ASC', [rows[0].id])
+      history = h.rows
+    } catch (_) {}
+    sendSuccess(res, { ...rows[0], history })
   } catch (err) {
     sendError(res, 500, 'Failed to fetch order details', err)
   }
 })
 
-app.post('/api/orders', async (req, res) => {
+// Order tags/labels
+app.post('/api/orders/:id/tags', authenticateAndAttach as any, requirePermission(['orders:update']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { tags } = req.body || {}
+    if (!Array.isArray(tags)) return sendError(res, 400, 'tags must be an array')
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tags TEXT[]`)
+    const { rows } = await pool.query(`UPDATE orders SET tags = $2, updated_at = NOW() WHERE id = $1 RETURNING id, tags`, [id, tags])
+    if (rows.length === 0) return sendError(res, 404, 'Order not found')
+    sendSuccess(res, rows[0])
+  } catch (err) {
+    sendError(res, 500, 'Failed to update tags', err)
+  }
+})
+
+// Split order (basic): split by item indexes into a new order
+app.post('/api/orders/:id/split', authenticateAndAttach as any, requirePermission(['orders:update']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { itemIndexes = [] } = req.body || {}
+    if (!Array.isArray(itemIndexes) || itemIndexes.length === 0) return sendError(res, 400, 'itemIndexes required')
+    const oRes = await pool.query('SELECT * FROM orders WHERE id = $1', [id])
+    if (oRes.rows.length === 0) return sendError(res, 404, 'Order not found')
+    const order = oRes.rows[0]
+    const items: any[] = Array.isArray(order.items) ? order.items : (order.items ? JSON.parse(order.items) : [])
+    const keep: any[] = []
+    const move: any[] = []
+    items.forEach((it, idx) => (itemIndexes.includes(idx) ? move : keep).push(it))
+    if (move.length === 0) return sendError(res, 400, 'No items to move')
+    const calcTotal = (arr: any[]) => arr.reduce((sum, it) => sum + (Number(it.price||0) * Number(it.qty||1)), 0)
+    const subtotalNew = calcTotal(move)
+    const subtotalOld = calcTotal(keep)
+    const shippingSplit = Number(order.shipping||0) * (subtotalNew / Math.max(1,(subtotalNew + subtotalOld)))
+    const taxSplit = Number(order.tax||0) * (subtotalNew / Math.max(1,(subtotalNew + subtotalOld)))
+    const totalNew = subtotalNew + shippingSplit + taxSplit
+    const totalOld = subtotalOld + (Number(order.shipping||0) - shippingSplit) + (Number(order.tax||0) - taxSplit)
+
+    // Update original order
+    await pool.query(
+      `UPDATE orders SET items = $2::jsonb, subtotal = $3, total = $4, updated_at = NOW() WHERE id = $1`,
+      [id, JSON.stringify(keep), subtotalOld, totalOld]
+    )
+
+    // Create new order number
+    const newOrderNumber = `${order.order_number}-S${Date.now().toString().slice(-4)}`
+    const ins = await pool.query(
+      `INSERT INTO orders (order_number, customer_name, customer_email, shipping_address, items, subtotal, shipping, tax, total, payment_method, payment_type, payment_status, cod, status)
+       VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING *`,
+      [
+        newOrderNumber,
+        order.customer_name,
+        order.customer_email,
+        order.shipping_address,
+        JSON.stringify(move),
+        subtotalNew,
+        shippingSplit,
+        taxSplit,
+        totalNew,
+        order.payment_method,
+        order.payment_type,
+        order.payment_status || 'unpaid',
+        order.cod || false,
+        order.status || 'pending'
+      ]
+    )
+    sendSuccess(res, { original: { id, items: keep, total: totalOld }, split: ins.rows[0] }, 201)
+  } catch (err) {
+    sendError(res, 500, 'Failed to split order', err)
+  }
+})
+
+app.post('/api/orders', allowOrderCreation as any, async (req, res) => {
   try {
     const {
       order_number,
@@ -1562,20 +1763,64 @@ app.post('/api/orders', async (req, res) => {
       total,
       payment_method,
       payment_type,
-      affiliate_id // Add affiliate tracking
+      payment_status = 'unpaid',
+      cod = false,
+      affiliate_id, // Add affiliate tracking
+      discount_code, // Discount code if applied
+      discount_amount = 0 // Discount amount applied
     } = req.body || {}
     
     if (!order_number || !customer_name || !customer_email || !shipping_address || !items || !total) {
       return sendError(res, 400, 'Missing required fields')
     }
     
+    // Ensure columns exist
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cod BOOLEAN DEFAULT false`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tags TEXT[]`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_code TEXT`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) DEFAULT 0`)
+
     const { rows } = await pool.query(`
-      INSERT INTO orders (order_number, customer_name, customer_email, shipping_address, items, subtotal, shipping, tax, total, payment_method, payment_type, affiliate_id)
-      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
+      INSERT INTO orders (order_number, customer_name, customer_email, shipping_address, items, subtotal, shipping, tax, total, payment_method, payment_type, payment_status, cod, affiliate_id, discount_code, discount_amount)
+      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
-    `, [order_number, customer_name, customer_email, JSON.stringify(shipping_address), JSON.stringify(items), subtotal, shipping, tax, total, payment_method, payment_type, affiliate_id || null])
+    `, [order_number, customer_name, customer_email, JSON.stringify(shipping_address), JSON.stringify(items), subtotal, shipping, tax, total, payment_method, payment_type, payment_status, cod, affiliate_id || null, discount_code || null, discount_amount || 0])
     
     const order = rows[0]
+
+    // Track discount usage if discount code was applied
+    if (discount_code && discount_amount > 0) {
+      try {
+        const discountResult = await pool.query(
+          `SELECT id FROM discounts WHERE code = $1`,
+          [discount_code.toUpperCase()]
+        )
+        
+        if (discountResult.rows.length > 0) {
+          const discountId = discountResult.rows[0].id
+          
+          // Record discount usage
+          await pool.query(`
+            INSERT INTO discount_usage (discount_id, order_id, customer_email, discount_amount)
+            VALUES ($1, $2, $3, $4)
+          `, [discountId, order.id, customer_email, discount_amount])
+          
+          // Increment usage count
+          await pool.query(`
+            UPDATE discounts 
+            SET usage_count = usage_count + 1,
+                updated_at = NOW()
+            WHERE id = $1
+          `, [discountId])
+          
+          console.log(`✅ Discount usage tracked: ${discount_code} for order ${order_number}`)
+        }
+      } catch (discountErr) {
+        console.error('Error tracking discount usage:', discountErr)
+        // Don't fail the order if discount tracking fails
+      }
+    }
     
     // Process affiliate commission if this is a referral
     if (affiliate_id) {
@@ -1717,7 +1962,7 @@ app.post('/api/orders', async (req, res) => {
 })
 
 // PUT update order by ID
-app.put('/api/orders/:id', async (req, res) => {
+app.put('/api/orders/:id', authenticateAndAttach as any, requirePermission(['orders:update']), async (req, res) => {
   try {
     const { id } = req.params
     const body = req.body || {}
@@ -1730,6 +1975,11 @@ app.put('/api/orders/:id', async (req, res) => {
     const setClause = fields.map((field, i) => `${field} = $${i + 2}`).join(', ')
     const values = [id, ...fields.map(field => body[field])]
     
+    // Ensure columns exist for updates
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cod BOOLEAN DEFAULT false`)
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tags TEXT[]`)
+
     const { rows } = await pool.query(
       `UPDATE orders SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
       values
@@ -1739,6 +1989,29 @@ app.put('/api/orders/:id', async (req, res) => {
       return sendError(res, 404, 'Order not found')
     }
     
+    // Record status change history
+    try {
+      if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+        await pool.query(
+          `CREATE TABLE IF NOT EXISTS order_status_history (
+            id SERIAL PRIMARY KEY,
+            order_id INT NOT NULL,
+            old_status TEXT,
+            new_status TEXT NOT NULL,
+            note TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+          )`
+        )
+        await pool.query(
+          `INSERT INTO order_status_history (order_id, old_status, new_status, note)
+           VALUES ($1, $2, $3, $4)`,
+          [rows[0].id, rows[0].status === body.status ? null : rows[0].status, body.status, body.note || null]
+        )
+      }
+    } catch (e) {
+      console.error('Failed to write order status history:', e)
+    }
+
     // Broadcast to admin
     broadcastUpdate('order_updated', rows[0])
     
@@ -1751,417 +2024,191 @@ app.put('/api/orders/:id', async (req, res) => {
   }
 })
 
-// ==================== DASHBOARD API ENDPOINTS ====================
 
-// Dashboard metrics endpoint
-app.get('/api/dashboard/metrics', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT metric_name, metric_value, change_percentage, trend
-      FROM dashboard_metrics
-      ORDER BY metric_name
-    `)
-    
-    const metrics = rows.reduce((acc, row) => {
-      acc[row.metric_name] = {
-        value: parseFloat(row.metric_value),
-        change: parseFloat(row.change_percentage || 0),
-        trend: row.trend
-      }
-      return acc
-    }, {})
-    
-    sendSuccess(res, metrics)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch dashboard metrics', err)
-  }
-})
+// ==================== CUSTOMER SEGMENTS AGGREGATOR ====================
 
 // Dashboard action items endpoint
-app.get('/api/dashboard/action-items', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM dashboard_action_items
-      ORDER BY priority DESC, created_at DESC
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch action items', err)
-  }
-})
 
 // Dashboard live visitors endpoint
-app.get('/api/dashboard/live-visitors', async (req, res) => {
+
+// ==================== JOURNEY TRACKING API ENDPOINTS ====================
+app.get('/api/journey-tracking', async (req, res) => {
   try {
-    const { rows } = await pool.query(`
-      SELECT COUNT(*) as count FROM dashboard_live_visitors
-      WHERE is_active = true AND last_activity > NOW() - INTERVAL '5 minutes'
-    `)
-    sendSuccess(res, { count: parseInt(rows[0].count) })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch live visitors', err)
-  }
-})
-
-// ==================== ANALYTICS API ENDPOINTS ====================
-
-// Analytics endpoint with top pages
-app.get('/api/analytics', async (req, res) => {
-  try {
-    const range = req.query.range || '30d'
+    const timeRange = req.query.timeRange || '7d'
+    const eventFilter = req.query.eventFilter || 'all'
     
-    // Calculate date range
-    const days = parseInt(range.toString().replace('d', '')) || 30
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-    
-    // Get analytics data
-    const ordersQuery = await pool.query(`
-      SELECT 
-        COUNT(*) as total_orders,
-        SUM(total) as total_revenue,
-        COUNT(DISTINCT customer_email) as unique_customers
-      FROM orders
-      WHERE created_at >= $1
-    `, [startDate])
-    
-    const analyticsDataQuery = await pool.query(`
-      SELECT metric_name, metric_value
-      FROM analytics_data
-      WHERE date_recorded >= $1
-    `, [startDate])
-    
-    // Get top pages
-    const topPagesQuery = await pool.query(`
-      SELECT page_url, page_title, views, unique_views, bounce_rate, avg_time_on_page
-      FROM analytics_top_pages
-      WHERE date_recorded >= $1
-      ORDER BY views DESC
-      LIMIT 10
-    `, [startDate])
-    
-    const orders = ordersQuery.rows[0]
-    const analyticsData = analyticsDataQuery.rows.reduce((acc, row) => {
-      acc[row.metric_name] = parseFloat(row.metric_value)
-      return acc
-    }, {})
-    
-    sendSuccess(res, {
-      overview: {
-        sessions: analyticsData.sessions || Math.floor(Math.random() * 2000) + 1000,
-        pageViews: analyticsData.page_views || Math.floor(Math.random() * 4000) + 2000,
-        bounceRate: analyticsData.bounce_rate || 45.2,
-        avgSessionDuration: analyticsData.avg_session_duration ? `${Math.floor(analyticsData.avg_session_duration / 60)}:${analyticsData.avg_session_duration % 60}` : '2:34',
-        conversionRate: analyticsData.conversion_rate || 3.2,
-        revenue: parseFloat(orders.total_revenue || 0),
-        orders: parseInt(orders.total_orders || 0),
-        customers: parseInt(orders.unique_customers || 0)
-      },
-      topPages: topPagesQuery.rows.map(row => ({
-        url: row.page_url,
-        title: row.page_title,
-        views: parseInt(row.views),
-        uniqueViews: parseInt(row.unique_views),
-        bounceRate: parseFloat(row.bounce_rate),
-        avgTimeOnPage: parseInt(row.avg_time_on_page)
-      }))
-    })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch analytics', err)
-  }
-})
-
-// ==================== FORMS API ENDPOINTS ====================
-
-// Forms endpoint
-app.get('/api/forms', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM forms
-      ORDER BY created_at DESC
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch forms', err)
-  }
-})
-
-// Form submissions endpoint
-app.get('/api/forms/submissions', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT fs.*, f.name as form_name
-      FROM form_submissions fs
-      JOIN forms f ON fs.form_id = f.id
-      ORDER BY fs.created_at DESC
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch form submissions', err)
-  }
-})
-
-// ==================== CONTACT MESSAGES API ENDPOINTS ====================
-
-// Submit contact message
-app.post('/api/contact/submit', async (req, res) => {
-  try {
-    const { name, email, phone, message } = req.body
-
-    if (!name || !email || !message) {
-      return sendError(res, 400, 'Name, email and message are required')
-    }
-
-    const { rows } = await pool.query(`
-      INSERT INTO contact_messages (name, email, phone, message)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `, [name, email, phone || null, message])
-
-    // Broadcast to admin panel
-    broadcastUpdate('contact_message_created', rows[0])
-    
-    // Create admin notification for new contact message
-    try {
-      await createAdminNotification(
-        pool,
-        'contact',
-        'New Contact Message',
-        `Message from ${name} (${email})`,
-        `/admin/contact-messages`,
-        '📧',
-        'medium',
-        { message_id: rows[0].id, name, email }
-      )
-    } catch (notifErr) {
-      console.error('Error creating admin notification:', notifErr)
+    // Calculate date filter based on timeRange
+    const now = new Date()
+    let dateFilter = new Date()
+    switch (timeRange) {
+      case '1d':
+        dateFilter.setDate(dateFilter.getDate() - 1)
+        break
+      case '7d':
+        dateFilter.setDate(dateFilter.getDate() - 7)
+        break
+      case '30d':
+        dateFilter.setDate(dateFilter.getDate() - 30)
+        break
+      case '90d':
+        dateFilter.setDate(dateFilter.getDate() - 90)
+        break
+      default:
+        dateFilter.setDate(dateFilter.getDate() - 7)
     }
     
-    // Track form submission in user activities
-    try {
-      // Try to find user by email
-      const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email])
-      const userId = userResult.rows.length > 0 ? userResult.rows[0].id : null
+    // Get all customers with activities in the time range
+    const { rows: customerRows } = await pool.query(`
+      SELECT DISTINCT u.id, u.name, u.email, u.created_at
+      FROM users u
+      INNER JOIN user_activities ua ON u.id = ua.user_id
+      WHERE ua.created_at >= $1
+      UNION
+      SELECT DISTINCT u.id, u.name, u.email, u.created_at
+      FROM users u
+      INNER JOIN orders o ON o.customer_email = u.email
+      WHERE o.created_at >= $1
+    `, [dateFilter])
+    
+    const journeys = await Promise.all(customerRows.map(async (customer: any) => {
+      // Get all activities for this customer
+      let activityQuery = `
+        SELECT 
+          ua.*,
+          ua.created_at as timestamp
+        FROM user_activities ua
+        WHERE ua.user_id = $1 AND ua.created_at >= $2
+      `
+      const params: any[] = [customer.id, dateFilter]
       
-      const { logUserActivity } = require('./utils/userActivitySchema')
-      await logUserActivity(pool, {
-        user_id: userId,
-        activity_type: 'form_submit',
-        activity_subtype: 'contact',
-        form_type: 'Contact Form',
-        form_data: { name, email, phone, message },
-        page_url: req.headers.referer || '/contact',
-        user_agent: req.headers['user-agent'],
-        ip_address: req.ip || req.connection.remoteAddress
+      if (eventFilter !== 'all') {
+        if (eventFilter === 'purchase') {
+          activityQuery += ` AND (ua.activity_type = 'order_placed' OR ua.activity_subtype = 'order_placed')`
+        } else {
+          activityQuery += ` AND ua.activity_type = $${params.length + 1}`
+          params.push(eventFilter)
+        }
+      }
+      
+      activityQuery += ` ORDER BY ua.created_at DESC`
+      
+      const { rows: activities } = await pool.query(activityQuery, params).catch(() => ({ rows: [] }))
+      
+      // Get orders for this customer
+      const { rows: orders } = await pool.query(`
+        SELECT * FROM orders
+        WHERE customer_email = $1 AND created_at >= $2
+        ORDER BY created_at DESC
+      `, [customer.email, dateFilter]).catch(() => ({ rows: [] }))
+      
+      // Map activities to journey events
+      const events: any[] = activities.map((act: any) => {
+        let eventType = act.activity_type
+        let eventName = act.activity_type.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+        
+        // Map activity types to journey event types
+        if (eventType === 'page_view') {
+          eventName = 'Page View'
+          if (act.page_title) eventName = act.page_title
+        } else if (eventType === 'cart' && act.activity_subtype === 'add') {
+          eventType = 'add_to_cart'
+          eventName = 'Added to Cart'
+        } else if (eventType === 'order_placed' || act.activity_subtype === 'order_placed') {
+          eventType = 'purchase'
+          eventName = 'Order Completed'
+        } else if (eventType === 'product_view' || act.product_name) {
+          eventType = 'product_view'
+          eventName = 'Product Viewed'
+        }
+        
+        return {
+          id: `act_${act.id}`,
+          customerId: String(customer.id),
+          customerName: customer.name,
+          eventType,
+          eventName,
+          timestamp: act.timestamp || act.created_at,
+          details: {
+            page: act.page_url,
+            product: act.product_name,
+            value: act.payment_amount || act.product_price,
+            source: act.referrer || 'direct',
+            device: act.metadata?.device || 'unknown'
+          },
+          sessionId: act.session_id || 'unknown'
+        }
       })
-    } catch (trackErr) {
-      console.error('Error tracking form submission:', trackErr)
-    }
-
-    sendSuccess(res, rows[0], 201)
-  } catch (err) {
-    sendError(res, 500, 'Failed to submit contact message', err)
-  }
-})
-
-// Get all contact messages (admin only)
-app.get('/api/contact/messages', authenticateToken, async (req, res) => {
-  try {
-    const { status } = req.query
+      
+      // Add purchase events from orders
+      orders.forEach((order: any) => {
+        events.push({
+          id: `order_${order.id}`,
+          customerId: String(customer.id),
+          customerName: customer.name,
+          eventType: 'purchase',
+          eventName: 'Order Completed',
+          timestamp: order.created_at,
+          details: {
+            value: parseFloat(order.total || 0),
+            product: `Order #${order.id}`,
+            orderId: order.id
+          },
+          sessionId: 'order'
+        })
+      })
+      
+      // Sort events by timestamp
+      events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      
+      // Calculate stats
+      const firstSeen = events.length > 0 ? events[0].timestamp : customer.created_at
+      const lastSeen = events.length > 0 ? events[events.length - 1].timestamp : customer.created_at
+      const totalValue = orders.reduce((sum: number, o: any) => sum + parseFloat(o.total || 0), 0)
+      
+      // Determine status
+      const daysSinceLastSeen = (new Date().getTime() - new Date(lastSeen).getTime()) / (1000 * 60 * 60 * 24)
+      let status: 'active' | 'inactive' | 'at-risk' | 'churned' = 'active'
+      if (daysSinceLastSeen > 90) status = 'churned'
+      else if (daysSinceLastSeen > 60) status = 'at-risk'
+      else if (daysSinceLastSeen > 30) status = 'inactive'
+      
+      // Calculate touchpoints
+      const touchpoints = {
+        website: activities.filter((a: any) => a.activity_type === 'page_view').length,
+        email: 0, // Can be added if email tracking exists
+        sms: 0, // Can be added if SMS tracking exists
+        push: 0, // Can be added if push tracking exists
+        chat: activities.filter((a: any) => a.activity_type === 'chat' || a.activity_subtype === 'chat').length
+      }
+      
+      return {
+        customerId: String(customer.id),
+        customerName: customer.name,
+        email: customer.email,
+        totalEvents: events.length,
+        firstSeen,
+        lastSeen,
+        totalValue,
+        status,
+        events,
+        touchpoints
+      }
+    }))
     
-    let query = 'SELECT * FROM contact_messages'
-    const values: any[] = []
-    
-    if (status) {
-      query += ' WHERE status = $1'
-      values.push(status)
-    }
-    
-    query += ' ORDER BY created_at DESC'
-    
-    const { rows } = await pool.query(query, values)
-    sendSuccess(res, rows)
+    sendSuccess(res, journeys)
   } catch (err) {
-    sendError(res, 500, 'Failed to fetch contact messages', err)
+    console.error('Journey tracking error:', err)
+    sendError(res, 500, 'Failed to fetch journey tracking data', err)
   }
 })
 
-// Update contact message status (admin only)
-app.put('/api/contact/messages/:id', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params
-    const { status } = req.body
+// moved to routes/communications.ts: forms endpoints
 
-    if (!status) {
-      return sendError(res, 400, 'Status is required')
-    }
+// moved to routes/communications.ts: contact endpoints
 
-    const { rows } = await pool.query(`
-      UPDATE contact_messages
-      SET status = $1, updated_at = NOW()
-      WHERE id = $2
-      RETURNING *
-    `, [status, id])
+// moved to routes/integrations.ts: google & social endpoints
 
-    if (rows.length === 0) {
-      return sendError(res, 404, 'Contact message not found')
-    }
-
-    broadcastUpdate('contact_message_updated', rows[0])
-    sendSuccess(res, rows[0])
-  } catch (err) {
-    sendError(res, 500, 'Failed to update contact message', err)
-  }
-})
-
-// ==================== GOOGLE/YOUTUBE API ENDPOINTS ====================
-
-// Google connection status
-app.get('/api/google/connection-status', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM google_connections
-      WHERE service = 'youtube'
-    `)
-    
-    const isConnected = rows.length > 0 && rows[0].is_connected
-    sendSuccess(res, { isConnected })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch connection status', err)
-  }
-})
-
-// Google analytics
-app.get('/api/google/analytics', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM google_analytics
-      ORDER BY date_recorded DESC
-      LIMIT 10
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch Google analytics', err)
-  }
-})
-
-// Google campaigns
-app.get('/api/google/campaigns', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM google_campaigns
-      ORDER BY created_at DESC
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch Google campaigns', err)
-  }
-})
-
-// ==================== SOCIAL MEDIA API ENDPOINTS ====================
-
-// Social connection status
-app.get('/api/social/connection-status', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT platform, is_connected FROM social_connections
-      WHERE platform IN ('facebook', 'instagram')
-    `)
-    
-    const connections = rows.reduce((acc, row) => {
-      acc[row.platform] = row.is_connected
-      return acc
-    }, {})
-    
-    sendSuccess(res, connections)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch social connections', err)
-  }
-})
-
-// Social posts
-app.get('/api/social/posts', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM social_posts
-      ORDER BY posted_at DESC
-      LIMIT 20
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch social posts', err)
-  }
-})
-
-// Social stats
-app.get('/api/social/stats', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT platform, followers, following, posts, engagement_rate
-      FROM social_stats
-      WHERE date_recorded = CURRENT_DATE
-      ORDER BY platform
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch social stats', err)
-  }
-})
-
-// ==================== STORE SETTINGS API ENDPOINTS ====================
-
-// Store settings
-app.get('/api/settings', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT setting_key, setting_value, setting_type, description, is_public
-      FROM store_settings
-      ORDER BY setting_key
-    `)
-    
-    const settings = rows.reduce((acc, row) => {
-      acc[row.setting_key] = row.setting_value
-      return acc
-    }, {})
-    
-    sendSuccess(res, settings)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch settings', err)
-  }
-})
-
-// Update store settings
-app.put('/api/settings', async (req, res) => {
-  try {
-    const settings = req.body
-    
-    for (const [key, value] of Object.entries(settings)) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2, updated_at = NOW()
-      `, [key, value])
-    }
-    
-    sendSuccess(res, { message: 'Settings updated successfully' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to update settings', err)
-  }
-})
-
-// Store themes
-app.get('/api/themes', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT * FROM store_themes
-      ORDER BY is_active DESC, created_at DESC
-    `)
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch themes', err)
-  }
-})
+// moved to routes/integrations.ts: settings & themes
 
 // ==================== AI API ENDPOINTS ====================
 
@@ -2324,250 +2371,18 @@ app.get('/api/invoices', async (req, res) => {
 })
 
 // Invoice Settings endpoints
-app.get('/api/invoice-settings/company-details', async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_company_details'
-    `)
-    
-    if (result.rows.length > 0 && result.rows[0].setting_value) {
-      const details = typeof result.rows[0].setting_value === 'string' 
-        ? JSON.parse(result.rows[0].setting_value) 
-        : result.rows[0].setting_value
-      res.json(details)
-    } else {
-      res.json({})
-    }
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch company details', err)
-  }
-})
+// moved to routes/extended.ts: /api/invoice-settings/company-details
 
-app.put('/api/invoice-settings/company-details', async (req, res) => {
-  try {
-    const details = req.body
-    
-    await pool.query(`
-      INSERT INTO store_settings (setting_key, setting_value)
-      VALUES ($1, $2::jsonb)
-      ON CONFLICT (setting_key) 
-      DO UPDATE SET setting_value = $2::jsonb, updated_at = NOW()
-    `, ['invoice_company_details', JSON.stringify(details)])
-    
-    sendSuccess(res, { message: 'Company details saved successfully' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to save company details', err)
-  }
-})
+// moved to routes/extended.ts: /api/invoice-settings/company-details (PUT)
 
 // Get all invoice settings
-app.get('/api/invoice-settings/all', async (req, res) => {
-  try {
-    const settings: any = {
-      colors: { primaryStart: '#667eea', primaryEnd: '#764ba2', accentStart: '#667eea', accentEnd: '#764ba2' },
-      tax: { rate: 18, type: 'IGST' },
-      terms: 'Thank you for doing business with us.',
-      signatureText: 'Authorized Signatory',
-      currency: '₹'
-    }
-
-    const result = await pool.query(`
-      SELECT setting_key, setting_value FROM store_settings 
-      WHERE setting_key IN ('invoice_colors', 'invoice_tax', 'invoice_terms', 'invoice_currency')
-    `)
-
-    result.rows.forEach((row: any) => {
-      const key = row.setting_key.replace('invoice_', '')
-      settings[key] = typeof row.setting_value === 'string' ? JSON.parse(row.setting_value) : row.setting_value
-    })
-
-    sendSuccess(res, settings)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch settings', err)
-  }
-})
+// moved to routes/extended.ts: /api/invoice-settings/all
 
 // Save all invoice settings
-app.put('/api/invoice-settings/all', async (req, res) => {
-  try {
-    const { colors, tax, terms, signatureText, currency } = req.body
-    
-    if (colors) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2::jsonb)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2::jsonb, updated_at = NOW()
-      `, ['invoice_colors', JSON.stringify(colors)])
-    }
-
-    if (tax) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2::jsonb)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2::jsonb, updated_at = NOW()
-      `, ['invoice_tax', JSON.stringify(tax)])
-    }
-
-    if (terms) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2::text)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2, updated_at = NOW()
-      `, ['invoice_terms', terms])
-    }
-
-    if (signatureText) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2::text)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2, updated_at = NOW()
-      `, ['invoice_signature', signatureText])
-    }
-
-    if (currency) {
-      await pool.query(`
-        INSERT INTO store_settings (setting_key, setting_value)
-        VALUES ($1, $2::text)
-        ON CONFLICT (setting_key) 
-        DO UPDATE SET setting_value = $2, updated_at = NOW()
-      `, ['invoice_currency', currency])
-    }
-    
-    sendSuccess(res, { message: 'All settings saved successfully' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to save settings', err)
-  }
-})
+// moved to routes/extended.ts: /api/invoice-settings/all (PUT)
 
 // Invoice download endpoint with Arctic Blue gradient
-app.get('/api/invoices/:id/download', async (req, res) => {
-  try {
-    const { id } = req.params
-    
-    // Check if id is numeric (integer ID) or string (order_number)
-    const isNumeric = /^\d+$/.test(id)
-    
-    let result
-    if (isNumeric) {
-      // If numeric, try to find by ID
-      result = await pool.query('SELECT * FROM orders WHERE id = $1', [parseInt(id)])
-    } else {
-      // If not numeric (like "NEFOL-1761469115971"), find by order_number
-      result = await pool.query('SELECT * FROM orders WHERE order_number = $1', [id])
-    }
-    
-    // If not found and it was numeric, try by order_number
-    if (result.rows.length === 0 && isNumeric) {
-      result = await pool.query('SELECT * FROM orders WHERE order_number = $1', [id])
-    }
-    
-    if (result.rows.length === 0) {
-      return sendError(res, 404, 'Invoice not found')
-    }
-    
-    const order = result.rows[0]
-    
-    // Get all invoice settings from database
-    const companyDetailsResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_company_details'
-    `)
-    
-    const colorsResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_colors'
-    `)
-    
-    const taxResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_tax'
-    `)
-    
-    const termsResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_terms'
-    `)
-    
-    const signatureResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_signature'
-    `)
-    
-    const currencyResult = await pool.query(`
-      SELECT setting_value FROM store_settings WHERE setting_key = 'invoice_currency'
-    `)
-    
-    let companyDetails = {
-      companyName: 'Nefol',
-      companyAddress: '',
-      companyPhone: '7355384939',
-      companyEmail: 'info@nefol.com',
-      gstNumber: '',
-      panNumber: ''
-    }
-    
-    let colors = {
-      primaryStart: '#667eea',
-      primaryEnd: '#764ba2',
-      accentStart: '#667eea',
-      accentEnd: '#764ba2'
-    }
-    
-    let taxSettings = {
-      rate: 18,
-      type: 'IGST'
-    }
-    
-    let terms = 'Thank you for doing business with us.'
-    let signature = 'Authorized Signatory'
-    let currency = '₹'
-    
-    // Parse and merge company details
-    if (companyDetailsResult.rows.length > 0 && companyDetailsResult.rows[0].setting_value) {
-      const parsed = typeof companyDetailsResult.rows[0].setting_value === 'string'
-        ? JSON.parse(companyDetailsResult.rows[0].setting_value)
-        : companyDetailsResult.rows[0].setting_value
-      companyDetails = { ...companyDetails, ...parsed }
-    }
-    
-    // Parse and merge colors
-    if (colorsResult.rows.length > 0 && colorsResult.rows[0].setting_value) {
-      const parsed = typeof colorsResult.rows[0].setting_value === 'string'
-        ? JSON.parse(colorsResult.rows[0].setting_value)
-        : colorsResult.rows[0].setting_value
-      colors = { ...colors, ...parsed }
-    }
-    
-    // Parse and merge tax settings
-    if (taxResult.rows.length > 0 && taxResult.rows[0].setting_value) {
-      const parsed = typeof taxResult.rows[0].setting_value === 'string'
-        ? JSON.parse(taxResult.rows[0].setting_value)
-        : taxResult.rows[0].setting_value
-      taxSettings = { ...taxSettings, ...parsed }
-    }
-    
-    // Get terms and signature
-    if (termsResult.rows.length > 0 && termsResult.rows[0].setting_value) {
-      terms = termsResult.rows[0].setting_value
-    }
-    
-    if (signatureResult.rows.length > 0 && signatureResult.rows[0].setting_value) {
-      signature = signatureResult.rows[0].setting_value
-    }
-    
-    if (currencyResult.rows.length > 0 && currencyResult.rows[0].setting_value) {
-      currency = currencyResult.rows[0].setting_value
-    }
-    
-    // Generate invoice HTML with all settings
-    const invoiceHtml = generateInvoiceHTML(order, companyDetails, colors, taxSettings, terms, signature, currency)
-    
-    // Return HTML for printing/downloading
-    res.setHeader('Content-Type', 'text/html')
-    res.send(invoiceHtml)
-  } catch (err) {
-    sendError(res, 500, 'Failed to generate invoice', err)
-  }
-})
+// moved to routes/extended.ts: /api/invoices/:id/download
 
 // Helper function to generate invoice HTML with Arctic Blue gradient
 function generateInvoiceHTML(order: any, companyDetails: any, colors: any, taxSettings: any, terms: string, signature: string, currency: string): string {
@@ -2924,34 +2739,7 @@ function generateInvoiceHTML(order: any, companyDetails: any, colors: any, taxSe
   }
 }
 
-// Loyalty Program endpoints
-app.get('/api/loyalty-program', async (req, res) => {
-  try {
-    const programs = [
-      {
-        id: 1,
-        name: 'Premium Membership',
-        description: 'Exclusive benefits for premium members',
-        points_multiplier: 2.0,
-        benefits: ['Free shipping', 'Early access', 'Exclusive discounts'],
-        status: 'active',
-        created_at: '2024-01-01T00:00:00Z'
-      },
-      {
-        id: 2,
-        name: 'VIP Program',
-        description: 'Ultimate VIP experience',
-        points_multiplier: 3.0,
-        benefits: ['Priority support', 'Personal shopper', 'Exclusive products'],
-        status: 'active',
-        created_at: '2024-01-01T00:00:00Z'
-      }
-    ]
-    res.json(programs)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch loyalty programs', err)
-  }
-})
+// (removed duplicate mock loyalty-program route)
 
 // Analytics endpoints
 app.get('/api/analytics', async (req, res) => {
@@ -3050,6 +2838,109 @@ app.get('/api/tax-rates', async (req, res) => {
     res.json(taxRates)
   } catch (err) {
     sendError(res, 500, 'Failed to fetch tax rates', err)
+  }
+})
+
+// Update product GST rate
+app.patch('/api/products/:id/gst', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { gstRate } = req.body
+    
+    if (gstRate === undefined || gstRate === null) {
+      return sendError(res, 400, 'GST rate is required')
+    }
+    
+    // Validate GST rate (should be between 0 and 100 for percentage)
+    const rate = parseFloat(gstRate)
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      return sendError(res, 400, 'GST rate must be between 0 and 100')
+    }
+    
+    // Get current product details
+    const { rows: productRows } = await pool.query('SELECT details FROM products WHERE id = $1', [id])
+    
+    if (productRows.length === 0) {
+      return sendError(res, 404, 'Product not found')
+    }
+    
+    // Update details JSONB field to include GST rate
+    const currentDetails = productRows[0].details || {}
+    const updatedDetails = {
+      ...currentDetails,
+      gst: rate.toString(),
+      gstPercent: rate.toString(),
+      'GST %': rate.toString()
+    }
+    
+    // Update product with new GST rate
+    const { rows } = await pool.query(
+      'UPDATE products SET details = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [JSON.stringify(updatedDetails), id]
+    )
+    
+    sendSuccess(res, rows[0])
+  } catch (err) {
+    sendError(res, 500, 'Failed to update product GST rate', err)
+  }
+})
+
+// Bulk update product GST rates
+app.post('/api/products/bulk-update-gst', async (req, res) => {
+  try {
+    const { updates } = req.body // Array of { productId, gstRate }
+    
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return sendError(res, 400, 'Updates array is required')
+    }
+    
+    const results = []
+    
+    for (const update of updates) {
+      const { productId, gstRate } = update
+      
+      if (!productId || gstRate === undefined || gstRate === null) {
+        results.push({ productId, success: false, error: 'Missing productId or gstRate' })
+        continue
+      }
+      
+      const rate = parseFloat(gstRate)
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        results.push({ productId, success: false, error: 'Invalid GST rate' })
+        continue
+      }
+      
+      try {
+        // Get current product details
+        const { rows: productRows } = await pool.query('SELECT details FROM products WHERE id = $1', [productId])
+        
+        if (productRows.length === 0) {
+          results.push({ productId, success: false, error: 'Product not found' })
+          continue
+        }
+        
+        const currentDetails = productRows[0].details || {}
+        const updatedDetails = {
+          ...currentDetails,
+          gst: rate.toString(),
+          gstPercent: rate.toString(),
+          'GST %': rate.toString()
+        }
+        
+        await pool.query(
+          'UPDATE products SET details = $1, updated_at = NOW() WHERE id = $2',
+          [JSON.stringify(updatedDetails), productId]
+        )
+        
+        results.push({ productId, success: true })
+      } catch (err: any) {
+        results.push({ productId, success: false, error: err.message })
+      }
+    }
+    
+    sendSuccess(res, { results, updated: results.filter(r => r.success).length })
+  } catch (err) {
+    sendError(res, 500, 'Failed to bulk update product GST rates', err)
   }
 })
 
@@ -3179,80 +3070,21 @@ async function createAdminNotification(
 }
 
 // Get all admin notifications
-app.get('/api/admin/notifications', async (req, res) => {
-  try {
-    const { status = 'unread', limit = 50 } = req.query
-    
-    const { rows } = await pool.query(`
-      SELECT * FROM admin_notifications
-      ${status !== 'all' ? 'WHERE status = $1' : ''}
-      ORDER BY created_at DESC
-      LIMIT $${status !== 'all' ? '2' : '1'}
-    `, status !== 'all' ? [status, limit] : [limit])
-    
-    sendSuccess(res, rows)
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch notifications', err)
-  }
-})
+// moved to routes/extended.ts: /api/admin/notifications
 
 // Get unread notification count
-app.get('/api/admin/notifications/unread-count', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT COUNT(*) as count FROM admin_notifications WHERE status = 'unread'
-    `)
-    
-    sendSuccess(res, { count: parseInt(rows[0].count) })
-  } catch (err) {
-    sendError(res, 500, 'Failed to fetch unread count', err)
-  }
-})
+// moved to routes/extended.ts: /api/admin/notifications/unread-count
 
 // Mark notification as read
-app.put('/api/admin/notifications/:id/read', async (req, res) => {
-  try {
-    const { id } = req.params
-    
-    await pool.query(`
-      UPDATE admin_notifications 
-      SET status = 'read', read_at = NOW()
-      WHERE id = $1
-    `, [id])
-    
-    sendSuccess(res, { message: 'Notification marked as read' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to mark notification as read', err)
-  }
-})
+// moved to routes/extended.ts: /api/admin/notifications/:id/read
 
 // Mark all notifications as read
-app.put('/api/admin/notifications/read-all', async (req, res) => {
-  try {
-    await pool.query(`
-      UPDATE admin_notifications 
-      SET status = 'read', read_at = NOW()
-      WHERE status = 'unread'
-    `)
-    
-    sendSuccess(res, { message: 'All notifications marked as read' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to mark all notifications as read', err)
-  }
-})
+// moved to routes/extended.ts: /api/admin/notifications/read-all
 
 // Delete notification
-app.delete('/api/admin/notifications/:id', async (req, res) => {
-  try {
-    const { id } = req.params
-    
-    await pool.query(`DELETE FROM admin_notifications WHERE id = $1`, [id])
-    
-    sendSuccess(res, { message: 'Notification deleted' })
-  } catch (err) {
-    sendError(res, 500, 'Failed to delete notification', err)
-  }
-})
+// moved to routes/extended.ts: /api/admin/notifications/:id (DELETE)
+
+// moved to routes/liveChat.ts
 
 // Start server
 const port = Number(process.env.PORT || 4000)
@@ -3283,3 +3115,41 @@ ensureSchema(pool)
     console.error('❌ Failed to start server:', err)
     process.exit(1)
   })
+
+let fbSyncLastRun: null | { time: number; result: any } = null
+
+// Schedule Facebook stock/price sync hourly
+cron.schedule('0 * * * *', async () => {
+  try {
+    console.log('[FB] Starting scheduled stock/price sync')
+    const result = await facebookRoutes.syncStockPrice(pool, { body: {}, query: {} } as any, {
+      json(data: any) { return data },
+      status(_s: any) { return this },
+      send(_d: any) { }, // dummy
+      setHeader(..._args: any[]) { }
+    } as any)
+    fbSyncLastRun = { time: Date.now(), result }
+    console.log('[FB] Stock/price sync complete')
+  } catch (err) {
+    fbSyncLastRun = { time: Date.now(), result: { error: (err as any)?.message || 'Failed' } }
+    console.error('[FB] Scheduled sync failed:', err)
+  }
+})
+
+app.get('/api/facebook/sync/last', (req, res) => {
+  res.json({ lastRun: fbSyncLastRun?.time ? new Date(fbSyncLastRun.time).toISOString() : null, result: fbSyncLastRun?.result })
+})
+
+// ... existing code ...
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    const { rows } = await pool.query(`select pv.id as variant_id, pv.product_id, pv.sku, i.quantity, i.reserved, i.low_stock_threshold from product_variants pv join inventory i on i.variant_id = pv.id where (i.quantity - i.reserved) <= coalesce(i.low_stock_threshold, 0) order by (i.quantity - i.reserved) asc limit 20`)
+    if (rows.length > 0) {
+      const lines = rows.map((r: any)=>`${r.sku || r.variant_id}: qty=${r.quantity - r.reserved} (threshold=${r.low_stock_threshold||0})`).join('\n')
+      try { await notificationRoutes.sendAlert(pool as any, { subject: 'Low Stock Alert', text: `Low stock detected for ${rows.length} variants:\n${lines}` }) } catch {}
+    }
+  } catch (err) {
+    console.error('Low stock check failed', err)
+  }
+})
+// ... existing code ...
